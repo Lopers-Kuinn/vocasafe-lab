@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Shield } from "lucide-react";
 import { signInWithEmailPassword, signOut } from "@/lib/auth";
 
 export default function LoginPage() {
@@ -42,7 +41,11 @@ export default function LoginPage() {
       <div className="w-full max-w-md space-y-6">
         <div className="text-center">
           <div className="flex items-center justify-center gap-2 mb-2">
-            <Shield className="h-8 w-8 text-emerald-600" />
+            <img
+              src="/logo.png"
+              alt="VocaSafe Lab Logo"
+              className="h-9 w-auto object-contain"
+            />
             <h1 className="text-2xl font-bold text-slate-900">VocaSafe Lab</h1>
           </div>
           <p className="text-slate-500">Masuk dengan akun Supabase Auth</p>

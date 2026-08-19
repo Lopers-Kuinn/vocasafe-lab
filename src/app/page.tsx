@@ -1,14 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { Shield, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 
 export default function HomePage() {
   return (
     <div className="flex flex-col min-h-screen items-center justify-center bg-gradient-to-br from-emerald-50 to-teal-50">
       <main className="flex flex-col items-center gap-8 px-6 text-center">
         <div className="flex items-center gap-3">
-          <Shield className="h-12 w-12 text-emerald-600" />
+          <img
+            src="/logo.png"
+            alt="VocaSafe Lab Logo"
+            className="h-12 w-auto object-contain"
+          />
           <h1 className="text-4xl font-bold text-slate-900">VocaSafe Lab</h1>
         </div>
         <p className="max-w-md text-lg text-slate-600">

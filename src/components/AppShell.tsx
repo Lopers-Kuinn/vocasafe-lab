@@ -162,7 +162,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-h-screen flex-col">
         <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 shadow-sm">
           <div className="flex items-center gap-2">
-            <Shield className="h-6 w-6 text-emerald-600" />
+            <img
+              src="/logo.png"
+              alt="VocaSafe Lab Logo"
+              className="h-7 w-auto object-contain"
+            />
             <span className="font-bold text-slate-900 hidden sm:inline">VocaSafe Lab</span>
           </div>
           <div className="flex items-center gap-3">
@@ -209,7 +213,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           >
             {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
-          <Shield className="h-6 w-6 text-emerald-600" />
+          <img
+            src="/logo.png"
+            alt="VocaSafe Lab Logo"
+            className="h-7 w-auto object-contain"
+          />
           <span className="font-bold text-slate-900 hidden sm:inline">VocaSafe Lab</span>
         </div>
         <div className="flex items-center gap-3">
