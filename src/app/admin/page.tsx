@@ -172,7 +172,7 @@ function ProfileCard({
 }) {
   return (
     <article className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex min-w-0 flex-col gap-3 min-[380px]:flex-row min-[380px]:items-start min-[380px]:justify-between">
         <div className="min-w-0">
           <h3 className="truncate font-semibold text-slate-900">
             {profile.fullName}
@@ -180,7 +180,7 @@ function ProfileCard({
           <p className="truncate text-sm text-slate-500">{profile.email}</p>
         </div>
         <span
-          className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${
+          className={`w-fit shrink-0 rounded-full px-2 py-1 text-xs font-medium ${
             profile.isActive
               ? "bg-emerald-100 text-emerald-800"
               : "bg-slate-200 text-slate-700"
@@ -189,7 +189,7 @@ function ProfileCard({
           {profile.isActive ? "Aktif" : "Nonaktif"}
         </span>
       </div>
-      <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+      <dl className="mt-4 grid grid-cols-1 gap-3 text-sm min-[360px]:grid-cols-2">
         <div>
           <dt className="text-slate-500">Role</dt>
           <dd className="font-medium text-slate-800">
@@ -270,9 +270,9 @@ export default function AdminPage() {
     <AppShell>
       <div className="space-y-6 pb-20 lg:pb-0">
         <header>
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-start gap-2">
             <ShieldCheck className="h-7 w-7 text-emerald-600" />
-            <h1 className="text-2xl font-bold text-slate-900">Administrasi Sistem</h1>
+            <h1 className="min-w-0 text-2xl font-bold leading-tight text-slate-900">Administrasi Sistem</h1>
           </div>
           <p className="mt-1 text-sm text-slate-500">
             Monitoring profil pengguna dan data dasar VocaSafe Lab dari Supabase.
@@ -413,7 +413,7 @@ export default function AdminPage() {
 
               <div className="grid gap-4 xl:grid-cols-2">
                 <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="mb-4 flex items-center justify-between gap-2">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <Building2 className="h-5 w-5 text-emerald-600" />
                       <h3 className="font-semibold text-slate-900">Laboratorium</h3>
@@ -451,7 +451,7 @@ export default function AdminPage() {
                 </section>
 
                 <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="mb-4 flex items-center justify-between gap-2">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <Package className="h-5 w-5 text-emerald-600" />
                       <h3 className="font-semibold text-slate-900">Aset</h3>
@@ -491,7 +491,7 @@ export default function AdminPage() {
                 </section>
 
                 <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="mb-4 flex items-center justify-between gap-2">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <ClipboardList className="h-5 w-5 text-teal-600" />
                       <h3 className="font-semibold text-slate-900">
@@ -509,7 +509,7 @@ export default function AdminPage() {
                       {data.checklistTemplates.map((template) => (
                         <article
                           key={template.id}
-                          className="flex items-center justify-between gap-3 rounded-md border border-slate-100 p-3"
+                          className="flex min-w-0 flex-col gap-2 rounded-md border border-slate-100 p-3 min-[380px]:flex-row min-[380px]:items-center min-[380px]:justify-between"
                         >
                           <p className="font-medium text-slate-900">{template.title}</p>
                           <span
@@ -528,7 +528,7 @@ export default function AdminPage() {
                 </section>
 
                 <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="mb-4 flex items-center justify-between gap-2">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <ClipboardList className="h-5 w-5 text-teal-600" />
                       <h3 className="font-semibold text-slate-900">Item Checklist</h3>

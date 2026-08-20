@@ -303,7 +303,7 @@ export default function ReportDetailPage() {
 
           <div className="mt-5 rounded-md bg-slate-50 p-4">
             <h2 className="font-semibold text-slate-800">Ringkasan Risiko</h2>
-            <div className="mt-2 grid grid-cols-2 gap-2 text-sm text-slate-600 sm:grid-cols-4">
+            <div className="mt-2 grid grid-cols-1 gap-2 text-sm text-slate-600 min-[360px]:grid-cols-2 sm:grid-cols-4">
               <p>Severity: {report.severity}</p>
               <p>Probability: {report.probability}</p>
               <p>Exposure: {report.exposure}</p>

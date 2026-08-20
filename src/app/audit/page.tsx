@@ -144,18 +144,18 @@ export default function AuditPage() {
               Rekap aset, laporan bahaya, dan checklist dari Supabase.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid w-full gap-2 min-[430px]:flex min-[430px]:w-auto min-[430px]:flex-wrap">
             <button
               type="button"
               onClick={() => exportCsv(summary)}
-              className="inline-flex min-h-10 items-center gap-1 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+              className="inline-flex min-h-10 w-full items-center justify-center gap-1 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 min-[430px]:w-auto"
             >
               <Download className="h-4 w-4" /> Export CSV
             </button>
             <button
               type="button"
               onClick={() => window.print()}
-              className="inline-flex min-h-10 items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className="inline-flex min-h-10 w-full items-center justify-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 min-[430px]:w-auto"
             >
               <Printer className="h-4 w-4" /> Print / Save as PDF
             </button>
