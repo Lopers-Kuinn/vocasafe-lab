@@ -175,12 +175,12 @@ begin
       or result_probability not between 1 and 5
       or result_exposure not between 1 and 5
       or result_risk_score <> result_severity * result_probability * result_exposure
-      or result_risk_category <> case
+      or result_risk_category <> (case
         when result_risk_score <= 20 then 'rendah'::public.risk_category
         when result_risk_score <= 50 then 'sedang'::public.risk_category
         when result_risk_score <= 80 then 'tinggi'::public.risk_category
         else 'kritis'::public.risk_category
-      end then
+      end) then
       raise exception 'Data risk scoring tidak valid.' using errcode = '22023';
     end if;
   elsif result_severity is not null or result_probability is not null
