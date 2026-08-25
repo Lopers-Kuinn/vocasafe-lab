@@ -100,7 +100,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }, [pathname, router]);
 
   useEffect(() => {
-    loadProfile();
+    const timer = setTimeout(() => void loadProfile(), 0);
+    return () => clearTimeout(timer);
   }, [loadProfile]);
 
   useEffect(() => {
@@ -133,11 +134,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         subscription.unsubscribe();
       };
     } catch (error) {
-      setAuthError(
+      const message =
         error instanceof Error
           ? error.message
-          : "Supabase belum dikonfigurasi. Periksa environment aplikasi.",
-      );
+          : "Supabase belum dikonfigurasi. Periksa environment aplikasi.";
+      queueMicrotask(() => setAuthError(message));
     }
   }, [loadProfile, router]);
 

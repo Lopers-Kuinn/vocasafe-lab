@@ -2,6 +2,7 @@
 
 import { calculateRiskScore } from "@/lib/risk-scoring";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { canEditReportStatus } from "@/lib/role-access";
 import type {
   ReportStatus,
   RiskLevel,
@@ -38,7 +39,8 @@ const REPORT_SELECT = `
   reported_at,
   created_at,
   updated_at,
-  asset:assets(id,code,name,location)
+  asset:assets(id,code,name,location),
+  laboratory:laboratories(id,code,name)
 `;
 
 interface ReportAssetRow {
@@ -46,6 +48,12 @@ interface ReportAssetRow {
   code: string;
   name: string;
   location: string | null;
+}
+
+interface ReportLaboratoryRow {
+  id: string;
+  code: string;
+  name: string;
 }
 
 interface ReportRow {
@@ -68,6 +76,7 @@ interface ReportRow {
   created_at: string;
   updated_at: string;
   asset: ReportAssetRow | ReportAssetRow[] | null;
+  laboratory: ReportLaboratoryRow | ReportLaboratoryRow[] | null;
 }
 
 interface AttachmentRow {
@@ -145,6 +154,7 @@ export interface DatabaseReport {
   createdAt: string;
   updatedAt: string;
   asset: ReportAssetSummary | null;
+  laboratory: ReportLaboratoryRow | null;
   attachments: ReportAttachment[];
 }
 
@@ -164,6 +174,7 @@ function firstRelation<T>(value: T | T[] | null): T | null {
 
 function mapReport(row: ReportRow): DatabaseReport {
   const asset = firstRelation(row.asset);
+  const laboratory = firstRelation(row.laboratory);
   const calculatedRisk = calculateRiskScore({
     severity: row.severity,
     probability: row.probability,
@@ -195,6 +206,13 @@ function mapReport(row: ReportRow): DatabaseReport {
           code: asset.code,
           name: asset.name,
           location: asset.location,
+        }
+      : null,
+    laboratory: laboratory
+      ? {
+          id: laboratory.id,
+          code: laboratory.code,
+          name: laboratory.name,
         }
       : null,
     attachments: [],
@@ -439,56 +457,36 @@ export async function saveReportFollowUp(input: {
     const profile = profileData as ProfileRoleRow;
     if (
       !profile.is_active ||
-      !["teknisi", "kepala_lab", "admin"].includes(profile.role)
+      !canEditReportStatus(profile.role)
     ) {
       return {
         followUp: null,
         statusUpdated: false,
         error:
-          "Hanya teknisi, kepala laboratorium, atau admin yang dapat memperbarui laporan.",
+          "Hanya teknisi atau admin yang dapat memperbarui laporan.",
       };
     }
 
-    const updatedAt = new Date().toISOString();
-    const { data: updatedReport, error: updateError } = await supabase
-      .from("reports")
-      .update({
-        status: input.status,
-        updated_at: updatedAt,
-      })
-      .eq("id", input.reportId)
-      .select("id")
-      .single();
+    const { data: followUpData, error: followUpError } = await supabase.rpc(
+      "save_report_followup_atomic",
+      {
+        target_report_id: input.reportId,
+        next_status: input.status,
+        followup_note: note,
+      },
+    );
 
-    if (updateError || !updatedReport) {
+    const followUp = Array.isArray(followUpData) ? followUpData[0] : followUpData;
+    if (followUpError || !followUp) {
       return {
         followUp: null,
         statusUpdated: false,
-        error: `Status laporan gagal diperbarui: ${updateError?.message ?? "Laporan tidak ditemukan atau tidak dapat diakses."}`,
-      };
-    }
-
-    const { data: followUpData, error: followUpError } = await supabase
-      .from("report_followups")
-      .insert({
-        report_id: input.reportId,
-        status: input.status,
-        note,
-        created_by: authData.user.id,
-      })
-      .select("id,report_id,status,note,created_by,created_at")
-      .single();
-
-    if (followUpError || !followUpData) {
-      return {
-        followUp: null,
-        statusUpdated: true,
-        error: `Status berhasil diperbarui, tetapi tindak lanjut gagal disimpan: ${followUpError?.message ?? "Unknown error"}`,
+        error: `Status dan tindak lanjut gagal disimpan: ${followUpError?.message ?? "Laporan tidak ditemukan atau tidak dapat diakses."}`,
       };
     }
 
     return {
-      followUp: mapFollowUp(followUpData as FollowUpRow),
+      followUp: mapFollowUp(followUp as FollowUpRow),
       statusUpdated: true,
       error: null,
     };

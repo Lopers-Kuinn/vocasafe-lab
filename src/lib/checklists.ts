@@ -439,26 +439,28 @@ export async function createChecklistResult(
     const risk = hasRiskFinding ? calculateRiskScore(input.riskInput) : null;
     const completedAt = new Date().toISOString();
 
-    const { data: resultData, error: resultError } = await supabase
-      .from("checklist_results")
-      .insert({
-        template_id: input.templateId,
-        asset_id: input.assetId,
-        laboratory_id: input.laboratoryId,
-        inspector_id: authData.user.id,
-        completed_at: completedAt,
-        overall_note: input.overallNote.trim() || null,
-        has_risk_finding: hasRiskFinding,
-        severity: risk ? input.riskInput.severity : null,
-        probability: risk ? input.riskInput.probability : null,
-        exposure: risk ? input.riskInput.exposure : null,
-        risk_score: risk?.score ?? null,
-        risk_category: risk?.category ?? null,
-        recommendation: risk?.recommendation ?? null,
-        updated_at: completedAt,
-      })
-      .select("id")
-      .single();
+    const { data: resultData, error: resultError } = await supabase.rpc(
+      "submit_checklist_result_atomic",
+      {
+        target_template_id: input.templateId,
+        target_asset_id: input.assetId,
+        target_laboratory_id: input.laboratoryId,
+        result_completed_at: completedAt,
+        result_overall_note: input.overallNote.trim() || null,
+        result_has_risk_finding: hasRiskFinding,
+        result_severity: risk ? input.riskInput.severity : null,
+        result_probability: risk ? input.riskInput.probability : null,
+        result_exposure: risk ? input.riskInput.exposure : null,
+        result_risk_score: risk?.score ?? null,
+        result_risk_category: risk?.category ?? null,
+        result_recommendation: risk?.recommendation ?? null,
+        result_answers: input.answers.map((answer) => ({
+          item_id: answer.itemId,
+          answer: answer.answer,
+          note: answer.note.trim() || null,
+        })),
+      },
+    );
 
     if (resultError || !resultData) {
       return {
@@ -468,26 +470,12 @@ export async function createChecklistResult(
       };
     }
 
-    const { error: answerError } = await supabase
-      .from("checklist_result_items")
-      .insert(
-        input.answers.map((answer) => ({
-          result_id: resultData.id,
-          item_id: answer.itemId,
-          answer: answer.answer,
-          note: answer.note.trim() || null,
-        })),
-      );
-
-    if (answerError) {
-      return {
-        resultId: resultData.id,
-        resultSaved: true,
-        error: `Hasil utama tersimpan, tetapi jawaban item gagal disimpan: ${answerError.message}`,
-      };
+    const resultId = typeof resultData === "string" ? resultData : null;
+    if (!resultId) {
+      return { resultId: null, resultSaved: false, error: "ID hasil checklist tidak valid." };
     }
 
-    return { resultId: resultData.id, resultSaved: true, error: null };
+    return { resultId, resultSaved: true, error: null };
   } catch (error) {
     return { resultId: null, resultSaved: false, error: errorMessage(error) };
   }

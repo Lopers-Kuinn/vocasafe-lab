@@ -45,3 +45,14 @@ export function canAccessRoute(role: UserRole, route: string): boolean {
 export function canEditReportStatus(role: UserRole): boolean {
   return role === "teknisi" || role === "admin";
 }
+
+/** Admin is global; teknisi may manage assets only inside their assigned lab. */
+export function canManageAssetData(
+  role: UserRole,
+  userLaboratoryId: string | null | undefined,
+  assetLaboratoryId?: string | null,
+): boolean {
+  if (role === "admin") return true;
+  if (role !== "teknisi" || !userLaboratoryId) return false;
+  return assetLaboratoryId === undefined || assetLaboratoryId === userLaboratoryId;
+}
