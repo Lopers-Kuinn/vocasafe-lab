@@ -1,25 +1,36 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   AlertTriangle,
   ArrowLeft,
   FileText,
   Loader2,
-  QrCode,
+  Pencil,
+  Phone,
   RefreshCw,
+  UserRound,
 } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
 import AppShell from "@/components/AppShell";
+import AssetActivitySection from "@/components/assets/AssetActivitySection";
+import AssetFormModal from "@/components/assets/AssetFormModal";
+import AssetQrActions from "@/components/assets/AssetQrActions";
 import {
+  fetchAssetContact,
   fetchAssetByLookup,
+  fetchLaboratories,
   getAssetQrPayload,
+  type AssetContactSummary,
   type DatabaseAsset,
   type DatabaseAssetKind,
   type DatabaseAssetStatus,
+  type LaboratorySummary,
 } from "@/lib/assets";
+import { getCurrentUserProfile } from "@/lib/auth";
+import { canManageAssetData } from "@/lib/role-access";
+import type { AppUser } from "@/types";
 
 const statusColors: Record<DatabaseAssetStatus, string> = {
   layak: "bg-green-100 text-green-800",
@@ -45,7 +56,15 @@ function formatDate(value: string | null): string {
   return new Intl.DateTimeFormat("id-ID", { dateStyle: "long" }).format(date);
 }
 
+function picRoleLabel(role: AssetContactSummary["picRole"]): string {
+  if (role === "dosen") return "Dosen";
+  if (role === "teknisi") return "Teknisi/Laboran";
+  if (role === "kepala_lab") return "Kepala Laboratorium";
+  return "";
+}
+
 export default function AssetDetailPage() {
+  const router = useRouter();
   const params = useParams<{ id: string | string[] }>();
   const routeId = Array.isArray(params.id) ? params.id[0] : params.id;
   const [asset, setAsset] = useState<DatabaseAsset | null>(null);
@@ -53,7 +72,27 @@ export default function AssetDetailPage() {
   const [error, setError] = useState("");
   const [notFound, setNotFound] = useState(false);
   const [loadedRouteId, setLoadedRouteId] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
+  const [contact, setContact] = useState<AssetContactSummary | null>(null);
+  const [laboratories, setLaboratories] = useState<LaboratorySummary[]>([]);
+  const [supportError, setSupportError] = useState("");
+  const [showEditForm, setShowEditForm] = useState(false);
   const currentRouteId = routeId ?? "";
+
+  function loadSupportingData(loadedAsset: DatabaseAsset) {
+    void Promise.all([
+      fetchAssetContact(loadedAsset.id),
+      fetchLaboratories(),
+      getCurrentUserProfile(),
+    ]).then(([contactResult, laboratoryResult, profileResult]) => {
+      setContact(contactResult.contact);
+      setLaboratories(laboratoryResult.laboratories);
+      setCurrentUser(profileResult.user);
+      setSupportError(
+        [contactResult.error, laboratoryResult.error].filter(Boolean).join("; "),
+      );
+    });
+  }
 
   function retryLoadAsset() {
     setLoading(true);
@@ -65,6 +104,7 @@ export default function AssetDetailPage() {
       setNotFound(!result.asset && !result.error);
       setLoadedRouteId(currentRouteId);
       setLoading(false);
+      if (result.asset) loadSupportingData(result.asset);
     });
   }
 
@@ -78,6 +118,7 @@ export default function AssetDetailPage() {
       setNotFound(!result.asset && !result.error);
       setLoadedRouteId(currentRouteId);
       setLoading(false);
+      if (result.asset) loadSupportingData(result.asset);
     });
 
     return () => {
@@ -146,6 +187,13 @@ export default function AssetDetailPage() {
   }
 
   const qrPayload = getAssetQrPayload(asset);
+  const canManage = currentUser
+    ? canManageAssetData(
+        currentUser.role,
+        currentUser.laboratoryId,
+        asset.laboratoryId,
+      )
+    : false;
 
   return (
     <AppShell>
@@ -160,7 +208,20 @@ export default function AssetDetailPage() {
         <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <h1 className="text-2xl font-bold text-slate-900">{asset.name}</h1>
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-2xl font-bold text-slate-900">{asset.name}</h1>
+                {canManage && (
+                  <button
+                    type="button"
+                    onClick={() => setShowEditForm(true)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                    aria-label="Edit detail aset"
+                    title="Edit detail aset"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
               <p className="mt-1 text-slate-500">
                 {asset.code} &middot; {asset.location || "Lokasi belum ditentukan"}
               </p>
@@ -170,18 +231,37 @@ export default function AssetDetailPage() {
                 {statusLabels[asset.status]}
               </span>
             </div>
-            <div className="flex shrink-0 flex-col items-center gap-2 rounded-lg bg-slate-50 p-3">
-              <QRCodeSVG value={qrPayload} size={120} />
-              <p className="max-w-40 break-all text-center text-xs text-slate-400">
-                {qrPayload}
-              </p>
-            </div>
           </div>
 
           <dl className="mt-6 grid gap-4 text-sm sm:grid-cols-2">
             <div>
               <dt className="font-medium text-slate-700">Jenis</dt>
               <dd className="mt-1 text-slate-600">{kindLabels[asset.kind]}</dd>
+            </div>
+            <div>
+              <dt className="font-medium text-slate-700">PIC / Penanggung Jawab</dt>
+              <dd className="mt-1 flex items-center gap-2 text-slate-600">
+                <UserRound className="h-4 w-4 text-emerald-600" />
+                {contact?.picName
+                  ? `${contact.picName}${contact.picRole ? ` · ${picRoleLabel(contact.picRole)}` : ""}`
+                  : "Belum ditentukan"}
+              </dd>
+            </div>
+            <div>
+              <dt className="font-medium text-slate-700">Kontak Darurat Lab</dt>
+              <dd className="mt-1 flex items-center gap-2 text-slate-600">
+                <Phone className="h-4 w-4 text-emerald-600" />
+                {contact?.emergencyContactPhone ? (
+                  <a
+                    href={`tel:${contact.emergencyContactPhone}`}
+                    className="hover:text-emerald-700 hover:underline"
+                  >
+                    {contact.emergencyContactName ?? "Kontak lab"}: {contact.emergencyContactPhone}
+                  </a>
+                ) : (
+                  "Belum tersedia"
+                )}
+              </dd>
             </div>
             <div>
               <dt className="font-medium text-slate-700">Kategori</dt>
@@ -212,6 +292,12 @@ export default function AssetDetailPage() {
               <dd className="mt-1 text-slate-600">{formatDate(asset.nextInspectionAt)}</dd>
             </div>
           </dl>
+
+          {supportError && (
+            <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+              Informasi PIC atau kontak belum dapat dimuat: {supportError}
+            </p>
+          )}
 
           <div className="mt-6 flex flex-wrap gap-2">
             <Link
@@ -268,22 +354,33 @@ export default function AssetDetailPage() {
           )}
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-          <div className="mb-4 flex items-center gap-2">
-            <QrCode className="h-5 w-5 text-emerald-600" />
-            <h2 className="text-lg font-semibold text-slate-900">QR Code Aset</h2>
-          </div>
-          <div className="flex flex-col items-center gap-3">
-            <QRCodeSVG value={qrPayload} size={200} />
-            <p className="max-w-full break-all text-center text-sm text-slate-500">
-              {qrPayload}
-            </p>
-            <p className="text-center text-xs text-slate-400">
-              QR Code ini membuka identitas aset berdasarkan data Supabase.
-            </p>
-          </div>
-        </div>
+        <AssetQrActions asset={asset} payload={qrPayload} />
+
+        <AssetActivitySection assetId={asset.id} canManage={canManage} />
       </div>
+
+      {showEditForm && currentUser && (
+        <AssetFormModal
+          key={`edit-${asset.id}`}
+          asset={asset}
+          contact={contact}
+          currentUser={currentUser}
+          laboratories={laboratories}
+          onClose={() => setShowEditForm(false)}
+          onSaved={(assetId) => {
+            setShowEditForm(false);
+            void fetchAssetByLookup(assetId).then((result) => {
+              if (!result.asset) {
+                setError(result.error ?? "Aset yang diperbarui tidak dapat dimuat.");
+                return;
+              }
+              setAsset(result.asset);
+              loadSupportingData(result.asset);
+              router.replace(`/assets/${encodeURIComponent(result.asset.code)}`);
+            });
+          }}
+        />
+      )}
     </AppShell>
   );
 }

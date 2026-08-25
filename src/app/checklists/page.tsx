@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
+  CalendarRange,
   ClipboardCheck,
   Loader2,
   Plus,
+  Search,
 } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import {
@@ -28,11 +30,48 @@ function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+type FindingFilter = "semua" | "tanpa_temuan" | RiskLevel;
+type TimeFilter = "semua" | "hari_ini" | "7_hari" | "30_hari" | "12_bulan";
+
+const findingFilters: Array<{ value: FindingFilter; label: string; className: string }> = [
+  { value: "semua", label: "Semua", className: "border-slate-200 text-slate-600" },
+  {
+    value: "tanpa_temuan",
+    label: "Tidak Ada Temuan",
+    className: "border-emerald-200 text-emerald-700",
+  },
+  { value: "rendah", label: "Rendah", className: "border-green-200 text-green-700" },
+  { value: "sedang", label: "Sedang", className: "border-yellow-200 text-yellow-700" },
+  { value: "tinggi", label: "Tinggi", className: "border-orange-200 text-orange-700" },
+  { value: "kritis", label: "Kritis", className: "border-red-200 text-red-700" },
+];
+
+function matchesTimeFilter(value: string, filter: TimeFilter): boolean {
+  if (filter === "semua") return true;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+
+  const now = new Date();
+  if (filter === "hari_ini") {
+    return (
+      date.getFullYear() === now.getFullYear() &&
+      date.getMonth() === now.getMonth() &&
+      date.getDate() === now.getDate()
+    );
+  }
+
+  const days = filter === "7_hari" ? 7 : filter === "30_hari" ? 30 : 365;
+  return date.getTime() >= now.getTime() - days * 24 * 60 * 60 * 1000;
+}
+
 export default function ChecklistsPage() {
   const [results, setResults] = useState<DatabaseChecklistResult[]>([]);
   const [templates, setTemplates] = useState<DatabaseChecklistTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [findingFilter, setFindingFilter] = useState<FindingFilter>("semua");
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>("semua");
 
   useEffect(() => {
     let active = true;
@@ -58,6 +97,33 @@ export default function ChecklistsPage() {
     };
   }, []);
 
+  const filteredResults = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase("id-ID");
+
+    return results.filter((result) => {
+      const matchesSearch =
+        !query ||
+        [
+          result.asset?.name,
+          result.asset?.code,
+          result.asset?.location,
+          result.inspector?.fullName,
+          result.overallNote,
+        ].some((value) => value?.toLocaleLowerCase("id-ID").includes(query));
+      const matchesFinding =
+        findingFilter === "semua" ||
+        (findingFilter === "tanpa_temuan"
+          ? !result.hasRiskFinding
+          : result.hasRiskFinding && result.riskCategory === findingFilter);
+
+      return (
+        matchesSearch &&
+        matchesFinding &&
+        matchesTimeFilter(result.completedAt, timeFilter)
+      );
+    });
+  }, [findingFilter, results, search, timeFilter]);
+
   return (
     <AppShell>
       <div className="space-y-6">
@@ -75,6 +141,59 @@ export default function ChecklistsPage() {
             <Plus className="h-4 w-4" /> Isi Checklist
           </Link>
         </div>
+
+        <section className="rounded-2xl border border-white/80 bg-white/85 p-4 shadow-sm backdrop-blur-xl">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+            <label className="relative block">
+              <span className="sr-only">Cari riwayat checklist</span>
+              <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Cari mesin, kode aset, lokasi, atau pemeriksa"
+                className="min-h-11 w-full rounded-xl border border-slate-200 bg-white py-2 pl-10 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+              />
+            </label>
+
+            <label className="relative block">
+              <span className="sr-only">Filter waktu inspeksi</span>
+              <CalendarRange className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
+              <select
+                value={timeFilter}
+                onChange={(event) => setTimeFilter(event.target.value as TimeFilter)}
+                className="min-h-11 w-full rounded-xl border border-slate-200 bg-white py-2 pl-10 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+              >
+                <option value="semua">Semua waktu</option>
+                <option value="hari_ini">Hari ini</option>
+                <option value="7_hari">7 hari terakhir</option>
+                <option value="30_hari">30 hari terakhir</option>
+                <option value="12_bulan">12 bulan terakhir</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="mt-4 flex gap-2 overflow-x-auto pb-1" aria-label="Filter status temuan">
+            {findingFilters.map((filter) => {
+              const active = findingFilter === filter.value;
+              return (
+                <button
+                  key={filter.value}
+                  type="button"
+                  onClick={() => setFindingFilter(filter.value)}
+                  aria-pressed={active}
+                  className={`min-h-9 shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                    active
+                      ? "border-emerald-700 bg-emerald-700 text-white shadow-sm"
+                      : `bg-white hover:bg-slate-50 ${filter.className}`
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              );
+            })}
+          </div>
+        </section>
 
         {loading ? (
           <div className="flex min-h-48 items-center justify-center rounded-lg border border-slate-200 bg-white">
@@ -141,14 +260,21 @@ export default function ChecklistsPage() {
                 Hasil Checklist
               </h2>
 
-              {results.length === 0 ? (
+              {filteredResults.length === 0 ? (
           <div className="rounded-lg border border-slate-200 bg-white p-8 text-center">
             <ClipboardCheck className="mx-auto mb-3 h-10 w-10 text-slate-300" />
-            <p className="text-slate-500">Belum ada hasil checklist di Supabase.</p>
+            <p className="text-slate-500">
+              {results.length === 0
+                ? "Belum ada hasil checklist di Supabase."
+                : "Tidak ada checklist yang sesuai pencarian atau filter."}
+            </p>
           </div>
               ) : (
           <div className="space-y-3">
-            {results.map((result) => (
+            <p className="text-sm text-slate-500">
+              Menampilkan {filteredResults.length} dari {results.length} hasil inspeksi.
+            </p>
+            {filteredResults.map((result) => (
               <article
                 key={result.id}
                 className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
