@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, FileWarning, Loader2, Plus } from "lucide-react";
+import { AlertCircle, FileWarning, Loader2, MapPin, Plus, ShieldAlert } from "lucide-react";
 import AppShell from "@/components/AppShell";
+import { fetchLaboratories, type LaboratorySummary } from "@/lib/assets";
 import { fetchReports, type DatabaseReport } from "@/lib/reports";
 import type { ReportStatus, RiskLevel } from "@/types";
 
@@ -38,16 +39,22 @@ export default function ReportsPage() {
   const [reports, setReports] = useState<DatabaseReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [laboratories, setLaboratories] = useState<LaboratorySummary[]>([]);
+  const [riskFilter, setRiskFilter] = useState<"semua" | RiskLevel>("semua");
+  const [laboratoryFilter, setLaboratoryFilter] = useState("semua");
 
   useEffect(() => {
     let active = true;
 
-    void fetchReports().then((result) => {
+    void Promise.all([fetchReports(), fetchLaboratories()]).then(([result, laboratoryResult]) => {
       if (!active) return;
       setReports(result.reports);
+      setLaboratories(laboratoryResult.laboratories);
       setError(
-        result.error
-          ? `Laporan tidak dapat dimuat dari Supabase: ${result.error}`
+        result.error || laboratoryResult.error
+          ? `Laporan tidak dapat dimuat dari Supabase: ${[result.error, laboratoryResult.error]
+              .filter(Boolean)
+              .join("; ")}`
           : "",
       );
       setLoading(false);
@@ -57,6 +64,16 @@ export default function ReportsPage() {
       active = false;
     };
   }, []);
+
+  const filteredReports = useMemo(
+    () =>
+      reports.filter(
+        (report) =>
+          (riskFilter === "semua" || report.riskCategory === riskFilter) &&
+          (laboratoryFilter === "semua" || report.laboratoryId === laboratoryFilter),
+      ),
+    [laboratoryFilter, reports, riskFilter],
+  );
 
   return (
     <AppShell>
@@ -76,6 +93,47 @@ export default function ReportsPage() {
           </Link>
         </div>
 
+        <section className="grid gap-3 rounded-2xl border border-white/80 bg-white/85 p-4 shadow-sm backdrop-blur-xl sm:grid-cols-2">
+          <label className="relative block">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Tingkat bahaya
+            </span>
+            <ShieldAlert className="pointer-events-none absolute bottom-3 left-3 h-4 w-4 text-slate-400" />
+            <select
+              value={riskFilter}
+              onChange={(event) =>
+                setRiskFilter(event.target.value as "semua" | RiskLevel)
+              }
+              className="min-h-11 w-full rounded-xl border border-slate-200 bg-white py-2 pl-10 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+            >
+              <option value="semua">Semua tingkat risiko</option>
+              <option value="kritis">Kritis</option>
+              <option value="tinggi">Tinggi</option>
+              <option value="sedang">Sedang</option>
+              <option value="rendah">Rendah</option>
+            </select>
+          </label>
+
+          <label className="relative block">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Lokasi laboratorium
+            </span>
+            <MapPin className="pointer-events-none absolute bottom-3 left-3 h-4 w-4 text-slate-400" />
+            <select
+              value={laboratoryFilter}
+              onChange={(event) => setLaboratoryFilter(event.target.value)}
+              className="min-h-11 w-full rounded-xl border border-slate-200 bg-white py-2 pl-10 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+            >
+              <option value="semua">Semua laboratorium</option>
+              {laboratories.map((laboratory) => (
+                <option key={laboratory.id} value={laboratory.id}>
+                  {laboratory.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </section>
+
         {loading ? (
           <div className="flex min-h-48 items-center justify-center rounded-lg border border-slate-200 bg-white">
             <Loader2 className="mr-2 h-5 w-5 animate-spin text-emerald-600" />
@@ -89,14 +147,21 @@ export default function ReportsPage() {
             <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
             <p>{error}</p>
           </div>
-        ) : reports.length === 0 ? (
+        ) : filteredReports.length === 0 ? (
           <div className="rounded-lg border border-slate-200 bg-white p-8 text-center">
             <FileWarning className="mx-auto mb-2 h-10 w-10 text-slate-300" />
-            <p className="text-slate-500">Belum ada laporan di Supabase.</p>
+            <p className="text-slate-500">
+              {reports.length === 0
+                ? "Belum ada laporan di Supabase."
+                : "Tidak ada laporan yang sesuai dengan filter."}
+            </p>
           </div>
         ) : (
           <div className="space-y-3">
-            {reports.map((report) => (
+            <p className="text-sm text-slate-500">
+              Menampilkan {filteredReports.length} dari {reports.length} laporan.
+            </p>
+            {filteredReports.map((report) => (
               <Link
                 key={report.id}
                 href={`/reports/${report.id}`}
@@ -111,7 +176,7 @@ export default function ReportsPage() {
                         : "Tanpa aset"}
                     </p>
                     <p className="mt-1 text-xs text-slate-400">
-                      {report.location} &middot;{" "}
+                      {report.laboratory?.name ?? report.location} &middot;{" "}
                       {new Date(report.reportedAt).toLocaleDateString("id-ID", {
                         day: "numeric",
                         month: "short",

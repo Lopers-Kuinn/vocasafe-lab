@@ -41,6 +41,69 @@ export interface DatabaseAsset {
   sop: SopSummary | null;
 }
 
+export interface AssetPicCandidate {
+  id: string;
+  fullName: string;
+  role: "dosen" | "teknisi" | "kepala_lab";
+}
+
+export interface AssetContactSummary {
+  picUserId: string | null;
+  picName: string | null;
+  picRole: "dosen" | "teknisi" | "kepala_lab" | null;
+  emergencyContactName: string | null;
+  emergencyContactPhone: string | null;
+}
+
+export type AssetActivityType =
+  | "aset_dibuat"
+  | "aset_diperbarui"
+  | "sop_diperbarui"
+  | "servis"
+  | "perbaikan"
+  | "catatan"
+  | "laporan"
+  | "checklist";
+
+export interface AssetActivity {
+  id: string;
+  type: AssetActivityType;
+  title: string;
+  note: string;
+  occurredAt: string;
+  href: string | null;
+}
+
+export interface SaveAssetInput {
+  assetId: string | null;
+  laboratoryId: string;
+  code: string;
+  name: string;
+  kind: DatabaseAssetKind;
+  category: string;
+  location: string;
+  description: string;
+  status: DatabaseAssetStatus;
+  picUserId: string | null;
+  nextInspectionAt: string | null;
+  updateSop: boolean;
+  sopTitle: string;
+  sopVersion: string;
+  sopRequiredPpe: string[];
+  sopSteps: string[];
+  updateLaboratoryContact: boolean;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+}
+
+export interface AddAssetActivityInput {
+  assetId: string;
+  type: "servis" | "perbaikan" | "catatan";
+  title: string;
+  note: string;
+  occurredAt: string;
+}
+
 interface LaboratoryRow {
   id: string;
   code: string;
@@ -75,6 +138,41 @@ interface AssetRow {
   next_inspection_at: string | null;
   laboratory: LaboratoryRow | LaboratoryRow[] | null;
   sop: SopRow | SopRow[] | null;
+}
+
+interface AssetContactRow {
+  pic_user_id: string | null;
+  pic_name: string | null;
+  pic_role: AssetContactSummary["picRole"];
+  emergency_contact_name: string | null;
+  emergency_contact_phone: string | null;
+}
+
+interface AssetActivityLogRow {
+  id: string;
+  activity_type: Exclude<AssetActivityType, "laporan" | "checklist">;
+  title: string;
+  note: string | null;
+  occurred_at: string;
+}
+
+interface AssetReportActivityRow {
+  id: string;
+  title: string;
+  description: string;
+  status: string;
+  reported_at: string | null;
+  created_at: string;
+}
+
+interface AssetChecklistActivityRow {
+  id: string;
+  completed_at: string | null;
+  created_at: string;
+  has_risk_finding: boolean;
+  risk_score: number | null;
+  risk_category: string | null;
+  overall_note: string | null;
 }
 
 const ASSET_SELECT = `
@@ -174,6 +272,223 @@ export async function fetchAssets(): Promise<{
     };
   } catch (error) {
     return { assets: [], error: errorMessage(error) };
+  }
+}
+
+export async function fetchLaboratories(): Promise<{
+  laboratories: LaboratorySummary[];
+  error: string | null;
+}> {
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase
+      .from("laboratories")
+      .select("id,code,name,department,location")
+      .order("name", { ascending: true });
+
+    if (error) return { laboratories: [], error: error.message };
+    return {
+      laboratories: (data ?? []) as LaboratorySummary[],
+      error: null,
+    };
+  } catch (error) {
+    return { laboratories: [], error: errorMessage(error) };
+  }
+}
+
+export async function fetchAssetPicCandidates(
+  laboratoryId: string,
+): Promise<{ candidates: AssetPicCandidate[]; error: string | null }> {
+  if (!laboratoryId) return { candidates: [], error: null };
+
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase.rpc("list_asset_pic_candidates", {
+      target_laboratory_id: laboratoryId,
+    });
+
+    if (error) return { candidates: [], error: error.message };
+
+    return {
+      candidates: ((data ?? []) as Array<{
+        id: string;
+        full_name: string;
+        role: AssetPicCandidate["role"];
+      }>).map((candidate) => ({
+        id: candidate.id,
+        fullName: candidate.full_name,
+        role: candidate.role,
+      })),
+      error: null,
+    };
+  } catch (error) {
+    return { candidates: [], error: errorMessage(error) };
+  }
+}
+
+export async function fetchAssetContact(
+  assetId: string,
+): Promise<{ contact: AssetContactSummary | null; error: string | null }> {
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase.rpc("get_asset_contact", {
+      target_asset_id: assetId,
+    });
+
+    if (error) return { contact: null, error: error.message };
+    const row = (Array.isArray(data) ? data[0] : data) as AssetContactRow | null;
+    if (!row) return { contact: null, error: null };
+
+    return {
+      contact: {
+        picUserId: row.pic_user_id,
+        picName: row.pic_name,
+        picRole: row.pic_role,
+        emergencyContactName: row.emergency_contact_name,
+        emergencyContactPhone: row.emergency_contact_phone,
+      },
+      error: null,
+    };
+  } catch (error) {
+    return { contact: null, error: errorMessage(error) };
+  }
+}
+
+export async function saveAssetRecord(
+  input: SaveAssetInput,
+): Promise<{ assetId: string | null; error: string | null }> {
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase.rpc("save_asset_record", {
+      target_asset_id: input.assetId,
+      target_laboratory_id: input.laboratoryId,
+      asset_code: input.code,
+      asset_name: input.name,
+      asset_kind: input.kind,
+      asset_category: input.category,
+      asset_location: input.location,
+      asset_description: input.description,
+      asset_status: input.status,
+      asset_pic_user_id: input.picUserId,
+      asset_next_inspection_at: input.nextInspectionAt,
+      update_sop: input.updateSop,
+      sop_title: input.sopTitle,
+      sop_version: input.sopVersion,
+      sop_required_ppe: input.sopRequiredPpe,
+      sop_steps: input.sopSteps,
+      update_laboratory_contact: input.updateLaboratoryContact,
+      laboratory_emergency_contact_name: input.emergencyContactName,
+      laboratory_emergency_contact_phone: input.emergencyContactPhone,
+    });
+
+    if (error) return { assetId: null, error: error.message };
+    return {
+      assetId: typeof data === "string" ? data : null,
+      error: typeof data === "string" ? null : "ID aset dari database tidak valid.",
+    };
+  } catch (error) {
+    return { assetId: null, error: errorMessage(error) };
+  }
+}
+
+export async function fetchAssetActivities(
+  assetId: string,
+): Promise<{ activities: AssetActivity[]; error: string | null }> {
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const [logResult, reportResult, checklistResult] = await Promise.all([
+      supabase
+        .from("asset_activity_logs")
+        .select("id,activity_type,title,note,occurred_at")
+        .eq("asset_id", assetId),
+      supabase
+        .from("reports")
+        .select("id,title,description,status,reported_at,created_at")
+        .eq("asset_id", assetId),
+      supabase
+        .from("checklist_results")
+        .select(
+          "id,completed_at,created_at,has_risk_finding,risk_score,risk_category,overall_note",
+        )
+        .eq("asset_id", assetId),
+    ]);
+
+    const errors = [logResult.error, reportResult.error, checklistResult.error]
+      .filter(Boolean)
+      .map((error) => error?.message)
+      .filter((message): message is string => Boolean(message));
+
+    const logs = ((logResult.data ?? []) as AssetActivityLogRow[]).map(
+      (row): AssetActivity => ({
+        id: `log-${row.id}`,
+        type: row.activity_type,
+        title: row.title,
+        note: row.note ?? "",
+        occurredAt: row.occurred_at,
+        href: null,
+      }),
+    );
+
+    const reports = ((reportResult.data ?? []) as AssetReportActivityRow[]).map(
+      (row): AssetActivity => ({
+        id: `report-${row.id}`,
+        type: "laporan",
+        title: `Laporan: ${row.title}`,
+        note: `${row.description} · Status ${row.status.replaceAll("_", " ")}`,
+        occurredAt: row.reported_at ?? row.created_at,
+        href: `/reports/${row.id}`,
+      }),
+    );
+
+    const checklists = (
+      (checklistResult.data ?? []) as AssetChecklistActivityRow[]
+    ).map(
+      (row): AssetActivity => ({
+        id: `checklist-${row.id}`,
+        type: "checklist",
+        title: row.has_risk_finding
+          ? `Inspeksi K3 dengan temuan ${row.risk_category ?? "risiko"}`
+          : "Inspeksi K3 tanpa temuan",
+        note:
+          row.overall_note ||
+          (row.risk_score !== null ? `Skor risiko ${row.risk_score}` : ""),
+        occurredAt: row.completed_at ?? row.created_at,
+        href: null,
+      }),
+    );
+
+    return {
+      activities: [...logs, ...reports, ...checklists].sort(
+        (a, b) =>
+          new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
+      ),
+      error: errors.length > 0 ? errors.join("; ") : null,
+    };
+  } catch (error) {
+    return { activities: [], error: errorMessage(error) };
+  }
+}
+
+export async function addAssetActivity(
+  input: AddAssetActivityInput,
+): Promise<{ activityId: string | null; error: string | null }> {
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase.rpc("add_asset_activity_log", {
+      target_asset_id: input.assetId,
+      activity_kind: input.type,
+      activity_title: input.title,
+      activity_note: input.note,
+      activity_occurred_at: input.occurredAt,
+    });
+
+    if (error) return { activityId: null, error: error.message };
+    return {
+      activityId: typeof data === "string" ? data : null,
+      error: typeof data === "string" ? null : "ID aktivitas tidak valid.",
+    };
+  } catch (error) {
+    return { activityId: null, error: errorMessage(error) };
   }
 }
 

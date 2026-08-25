@@ -2,14 +2,20 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Loader2, Package, RefreshCw, Search } from "lucide-react";
+import { AlertTriangle, Loader2, Package, Plus, RefreshCw, Search } from "lucide-react";
 import AppShell from "@/components/AppShell";
+import AssetFormModal from "@/components/assets/AssetFormModal";
 import {
   fetchAssets,
+  fetchLaboratories,
   type DatabaseAsset,
   type DatabaseAssetKind,
   type DatabaseAssetStatus,
+  type LaboratorySummary,
 } from "@/lib/assets";
+import { getCurrentUserProfile } from "@/lib/auth";
+import { canManageAssetData } from "@/lib/role-access";
+import type { AppUser } from "@/types";
 
 const statusColors: Record<DatabaseAssetStatus, string> = {
   layak: "bg-green-100 text-green-800",
@@ -32,6 +38,9 @@ export default function AssetsPage() {
   const [assets, setAssets] = useState<DatabaseAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
+  const [laboratories, setLaboratories] = useState<LaboratorySummary[]>([]);
+  const [showAssetForm, setShowAssetForm] = useState(false);
   const [search, setSearch] = useState("");
   const [kindFilter, setKindFilter] = useState<"semua" | DatabaseAssetKind>(
     "semua",
@@ -43,22 +52,30 @@ export default function AssetsPage() {
   function retryLoadAssets() {
     setLoading(true);
     setError("");
-    void fetchAssets().then((result) => {
+    void Promise.all([fetchAssets(), fetchLaboratories(), getCurrentUserProfile()]).then(
+      ([result, laboratoryResult, profileResult]) => {
       setAssets(result.assets);
-      setError(result.error ?? "");
+      setLaboratories(laboratoryResult.laboratories);
+      setCurrentUser(profileResult.user);
+      setError([result.error, laboratoryResult.error].filter(Boolean).join("; "));
       setLoading(false);
-    });
+      },
+    );
   }
 
   useEffect(() => {
     let active = true;
 
-    void fetchAssets().then((result) => {
+    void Promise.all([fetchAssets(), fetchLaboratories(), getCurrentUserProfile()]).then(
+      ([result, laboratoryResult, profileResult]) => {
       if (!active) return;
       setAssets(result.assets);
-      setError(result.error ?? "");
+      setLaboratories(laboratoryResult.laboratories);
+      setCurrentUser(profileResult.user);
+      setError([result.error, laboratoryResult.error].filter(Boolean).join("; "));
       setLoading(false);
-    });
+      },
+    );
 
     return () => {
       active = false;
@@ -89,11 +106,26 @@ export default function AssetsPage() {
   return (
     <AppShell>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Daftar Aset</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Data alat dan fasilitas laboratorium dari Supabase.
-          </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">Daftar Aset</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Data alat dan fasilitas laboratorium dari Supabase.
+            </p>
+          </div>
+          {currentUser &&
+            canManageAssetData(
+              currentUser.role,
+              currentUser.laboratoryId,
+            ) && (
+              <button
+                type="button"
+                onClick={() => setShowAssetForm(true)}
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800"
+              >
+                <Plus className="h-4 w-4" /> Tambah Aset
+              </button>
+            )}
         </div>
 
         <div className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-[minmax(0,1fr)_180px_200px]">
@@ -218,6 +250,19 @@ export default function AssetsPage() {
           </>
         )}
       </div>
+
+      {showAssetForm && currentUser && (
+        <AssetFormModal
+          key="new-asset"
+          currentUser={currentUser}
+          laboratories={laboratories}
+          onClose={() => setShowAssetForm(false)}
+          onSaved={() => {
+            setShowAssetForm(false);
+            retryLoadAssets();
+          }}
+        />
+      )}
     </AppShell>
   );
 }

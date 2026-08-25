@@ -39,7 +39,8 @@ const REPORT_SELECT = `
   reported_at,
   created_at,
   updated_at,
-  asset:assets(id,code,name,location)
+  asset:assets(id,code,name,location),
+  laboratory:laboratories(id,code,name)
 `;
 
 interface ReportAssetRow {
@@ -47,6 +48,12 @@ interface ReportAssetRow {
   code: string;
   name: string;
   location: string | null;
+}
+
+interface ReportLaboratoryRow {
+  id: string;
+  code: string;
+  name: string;
 }
 
 interface ReportRow {
@@ -69,6 +76,7 @@ interface ReportRow {
   created_at: string;
   updated_at: string;
   asset: ReportAssetRow | ReportAssetRow[] | null;
+  laboratory: ReportLaboratoryRow | ReportLaboratoryRow[] | null;
 }
 
 interface AttachmentRow {
@@ -146,6 +154,7 @@ export interface DatabaseReport {
   createdAt: string;
   updatedAt: string;
   asset: ReportAssetSummary | null;
+  laboratory: ReportLaboratoryRow | null;
   attachments: ReportAttachment[];
 }
 
@@ -165,6 +174,7 @@ function firstRelation<T>(value: T | T[] | null): T | null {
 
 function mapReport(row: ReportRow): DatabaseReport {
   const asset = firstRelation(row.asset);
+  const laboratory = firstRelation(row.laboratory);
   const calculatedRisk = calculateRiskScore({
     severity: row.severity,
     probability: row.probability,
@@ -196,6 +206,13 @@ function mapReport(row: ReportRow): DatabaseReport {
           code: asset.code,
           name: asset.name,
           location: asset.location,
+        }
+      : null,
+    laboratory: laboratory
+      ? {
+          id: laboratory.id,
+          code: laboratory.code,
+          name: laboratory.name,
         }
       : null,
     attachments: [],
