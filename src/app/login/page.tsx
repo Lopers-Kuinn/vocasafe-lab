@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, CheckCircle2, Eye, EyeOff, Loader2, ShieldCheck, Sparkles } from "lucide-react";
 import ScrollAmbientBackground from "@/components/layout/ScrollAmbientBackground";
 import { signInWithEmailPassword, signOut } from "@/lib/auth";
+import { clearSessionActivity, markSessionActivity } from "@/lib/session-activity";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -15,6 +16,18 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const reason = new URLSearchParams(window.location.search).get("reason");
+      if (reason === "inactive") {
+        setNotice("Sesi berakhir karena tidak ada aktivitas selama 30 menit. Silakan masuk kembali.");
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -28,6 +41,7 @@ export default function LoginPage() {
 
     if (signInError || !user) {
       const { error: signOutError } = await signOut();
+      clearSessionActivity();
       const loginError = signInError ?? "Login gagal. Periksa email dan password.";
       setError(
         signOutError
@@ -38,6 +52,7 @@ export default function LoginPage() {
       return;
     }
 
+    markSessionActivity();
     router.push("/dashboard");
   }
 
@@ -154,6 +169,12 @@ export default function LoginPage() {
             {error && (
               <div role="alert" className="rounded-2xl border border-red-100 bg-red-50 p-3.5 text-sm leading-5 text-red-700">
                 {error}
+              </div>
+            )}
+
+            {notice && !error && (
+              <div role="status" className="rounded-2xl border border-amber-200 bg-amber-50 p-3.5 text-sm leading-5 text-amber-800">
+                {notice}
               </div>
             )}
 

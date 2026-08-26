@@ -121,14 +121,14 @@ export default function AssetQrActions({ asset, payload }: AssetQrActionsProps) 
   }
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+    <section className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
       <div className="mb-4 flex items-center gap-2">
         <QrCode className="h-5 w-5 text-emerald-600" />
         <h2 className="text-lg font-semibold text-slate-900">QR Code Aset</h2>
       </div>
       <div className="flex flex-col items-center gap-3">
-        <div className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
-          <QRCodeSVG id={svgId} value={payload} size={210} level="H" includeMargin />
+        <div className="w-full max-w-[234px] rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
+          <QRCodeSVG id={svgId} value={payload} size={210} level="H" includeMargin className="h-auto w-full" />
         </div>
         <p className="max-w-full break-all text-center text-sm text-slate-500">{payload}</p>
         <div className="grid w-full max-w-md gap-2 sm:grid-cols-2">

@@ -78,8 +78,8 @@ export default function ReportsPage() {
   return (
     <AppShell>
       <div className="space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
+        <div className="flex flex-col items-stretch gap-3 min-[420px]:flex-row min-[420px]:items-center min-[420px]:justify-between">
+          <div className="min-w-0">
             <h1 className="text-2xl font-bold text-slate-900">Daftar Laporan</h1>
             <p className="mt-1 text-sm text-slate-500">
               Data laporan bahaya tersimpan dan dimuat dari Supabase.
@@ -87,7 +87,7 @@ export default function ReportsPage() {
           </div>
           <Link
             href="/reports/new"
-            className="inline-flex min-h-10 items-center gap-1 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+            className="inline-flex min-h-11 w-full items-center justify-center gap-1 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 min-[420px]:w-auto"
           >
             <Plus className="h-4 w-4" /> Laporan Baru
           </Link>
@@ -165,17 +165,17 @@ export default function ReportsPage() {
               <Link
                 key={report.id}
                 href={`/reports/${report.id}`}
-                className="block rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+                className="block min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-slate-900">{report.title}</p>
-                    <p className="mt-1 text-sm text-slate-500">
+                    <p className="break-words font-semibold text-slate-900">{report.title}</p>
+                    <p className="mt-1 break-words text-sm text-slate-500">
                       {report.asset
                         ? `${report.asset.name} (${report.asset.code})`
                         : "Tanpa aset"}
                     </p>
-                    <p className="mt-1 text-xs text-slate-400">
+                    <p className="mt-1 break-words text-xs text-slate-400">
                       {report.laboratory?.name ?? report.location} &middot;{" "}
                       {new Date(report.reportedAt).toLocaleDateString("id-ID", {
                         day: "numeric",

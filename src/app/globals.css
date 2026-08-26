@@ -346,6 +346,7 @@ textarea {
 }
 
 .page-enter :where(input, select, textarea, img, video, canvas) {
+  box-sizing: border-box;
   max-width: 100%;
 }
 
@@ -573,6 +574,11 @@ textarea {
 }
 
 @media (max-width: 639px) {
+  .page-enter :where(button, a, span, time) {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
   .page-enter :where(input, select, textarea) {
     width: 100%;
     min-width: 0;

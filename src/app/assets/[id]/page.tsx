@@ -205,11 +205,11 @@ export default function AssetDetailPage() {
           <ArrowLeft className="h-4 w-4" /> Kembali
         </Link>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-2xl font-bold text-slate-900">{asset.name}</h1>
+                <h1 className="min-w-0 break-words text-2xl font-bold text-slate-900">{asset.name}</h1>
                 {canManage && (
                   <button
                     type="button"
@@ -222,7 +222,7 @@ export default function AssetDetailPage() {
                   </button>
                 )}
               </div>
-              <p className="mt-1 text-slate-500">
+              <p className="mt-1 break-words text-slate-500">
                 {asset.code} &middot; {asset.location || "Lokasi belum ditentukan"}
               </p>
               <span
@@ -240,21 +240,23 @@ export default function AssetDetailPage() {
             </div>
             <div>
               <dt className="font-medium text-slate-700">PIC / Penanggung Jawab</dt>
-              <dd className="mt-1 flex items-center gap-2 text-slate-600">
-                <UserRound className="h-4 w-4 text-emerald-600" />
-                {contact?.picName
-                  ? `${contact.picName}${contact.picRole ? ` · ${picRoleLabel(contact.picRole)}` : ""}`
-                  : "Belum ditentukan"}
+              <dd className="mt-1 flex min-w-0 items-start gap-2 text-slate-600">
+                <UserRound className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                <span className="min-w-0 break-words">
+                  {contact?.picName
+                    ? `${contact.picName}${contact.picRole ? ` · ${picRoleLabel(contact.picRole)}` : ""}`
+                    : "Belum ditentukan"}
+                </span>
               </dd>
             </div>
             <div>
               <dt className="font-medium text-slate-700">Kontak Darurat Lab</dt>
-              <dd className="mt-1 flex items-center gap-2 text-slate-600">
-                <Phone className="h-4 w-4 text-emerald-600" />
+              <dd className="mt-1 flex min-w-0 items-start gap-2 text-slate-600">
+                <Phone className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
                 {contact?.emergencyContactPhone ? (
                   <a
                     href={`tel:${contact.emergencyContactPhone}`}
-                    className="hover:text-emerald-700 hover:underline"
+                    className="min-w-0 break-all hover:text-emerald-700 hover:underline"
                   >
                     {contact.emergencyContactName ?? "Kontak lab"}: {contact.emergencyContactPhone}
                   </a>
@@ -265,11 +267,11 @@ export default function AssetDetailPage() {
             </div>
             <div>
               <dt className="font-medium text-slate-700">Kategori</dt>
-              <dd className="mt-1 text-slate-600">{asset.category || "Belum tersedia"}</dd>
+              <dd className="mt-1 break-words text-slate-600">{asset.category || "Belum tersedia"}</dd>
             </div>
             <div>
               <dt className="font-medium text-slate-700">Laboratorium</dt>
-              <dd className="mt-1 text-slate-600">
+              <dd className="mt-1 break-words text-slate-600">
                 {asset.laboratory
                   ? `${asset.laboratory.name} (${asset.laboratory.code})`
                   : "Belum terhubung"}
@@ -277,11 +279,11 @@ export default function AssetDetailPage() {
             </div>
             <div>
               <dt className="font-medium text-slate-700">Lokasi</dt>
-              <dd className="mt-1 text-slate-600">{asset.location || "Belum tersedia"}</dd>
+              <dd className="mt-1 break-words text-slate-600">{asset.location || "Belum tersedia"}</dd>
             </div>
             <div className="sm:col-span-2">
               <dt className="font-medium text-slate-700">Deskripsi</dt>
-              <dd className="mt-1 text-slate-600">{asset.description || "Belum tersedia"}</dd>
+              <dd className="mt-1 whitespace-pre-wrap break-words text-slate-600">{asset.description || "Belum tersedia"}</dd>
             </div>
             <div>
               <dt className="font-medium text-slate-700">Inspeksi Terakhir</dt>
@@ -302,14 +304,14 @@ export default function AssetDetailPage() {
           <div className="mt-6 flex flex-wrap gap-2">
             <Link
               href={`/reports/new?assetId=${encodeURIComponent(asset.code)}`}
-              className="inline-flex items-center gap-2 rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
+              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100 min-[420px]:w-auto"
             >
               <AlertTriangle className="h-4 w-4" /> Laporkan Bahaya
             </Link>
           </div>
         </div>
 
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+        <div className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
           <div className="mb-4 flex items-center gap-2">
             <FileText className="h-5 w-5 text-emerald-600" />
             <h2 className="text-lg font-semibold text-slate-900">SOP Digital</h2>
@@ -339,9 +341,9 @@ export default function AssetDetailPage() {
               <div className="mt-5">
                 <p className="text-sm font-medium text-slate-700">Langkah-langkah</p>
                 {asset.sop.steps.length > 0 ? (
-                  <ol className="mt-2 list-inside list-decimal space-y-2 text-sm text-slate-600">
+                  <ol className="mt-2 list-outside space-y-2 pl-5 text-sm text-slate-600">
                     {asset.sop.steps.map((step, index) => (
-                      <li key={`${index}-${step}`}>{step}</li>
+                      <li key={`${index}-${step}`} className="break-words pl-1">{step}</li>
                     ))}
                   </ol>
                 ) : (

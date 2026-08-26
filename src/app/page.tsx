@@ -33,7 +33,7 @@ export default function HomePage() {
         </Link>
 
         <Link
-          href="/login"
+          href="/dashboard"
           className="group inline-flex shrink-0 items-center gap-2 rounded-2xl border border-emerald-950/10 bg-white/75 px-3.5 py-2.5 text-sm font-semibold text-emerald-950 shadow-sm backdrop-blur-xl transition hover:-translate-y-0.5 hover:bg-white sm:px-4"
         >
           Masuk
@@ -59,14 +59,14 @@ export default function HomePage() {
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Link
-              href="/login"
+              href="/dashboard"
               className="group inline-flex items-center justify-center gap-2 rounded-2xl bg-[#102c23] px-6 py-3.5 text-sm font-semibold text-white shadow-[0_18px_36px_rgba(16,44,35,0.2)] transition hover:-translate-y-1 hover:bg-[#164535]"
             >
               Buka ruang kerja
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
             </Link>
             <Link
-              href="/login"
+              href="/dashboard"
               className="inline-flex items-center justify-center rounded-2xl border border-emerald-950/10 bg-white/70 px-6 py-3.5 text-sm font-semibold text-emerald-950 backdrop-blur-xl transition hover:bg-white"
             >
               Lihat sistem audit

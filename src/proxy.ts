@@ -21,14 +21,18 @@ function isPrivateRoute(pathname: string): boolean {
 
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
-  if (!isPrivateRoute(pathname)) return NextResponse.next();
+  const isLoginRoute = pathname === "/login";
+  const isProtectedRoute = isPrivateRoute(pathname);
+  if (!isProtectedRoute && !isLoginRoute) return NextResponse.next();
 
   let response = NextResponse.next({ request });
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return isProtectedRoute
+      ? NextResponse.redirect(new URL("/login", request.url))
+      : NextResponse.next();
   }
 
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
@@ -46,6 +50,7 @@ export async function proxy(request: NextRequest) {
 
   const { data: authData } = await supabase.auth.getUser();
   if (!authData.user) {
+    if (isLoginRoute) return response;
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("next", pathname);
     return NextResponse.redirect(loginUrl);
@@ -58,7 +63,13 @@ export async function proxy(request: NextRequest) {
     .maybeSingle();
 
   if (!profile?.is_active) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return isLoginRoute
+      ? response
+      : NextResponse.redirect(new URL("/login", request.url));
+  }
+
+  if (isLoginRoute) {
+    return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
   if (!canAccessRoute(profile.role as UserRole, pathname)) {
