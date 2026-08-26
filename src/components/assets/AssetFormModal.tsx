@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Loader2, Save, X } from "lucide-react";
 import {
   fetchAssetPicCandidates,
@@ -94,6 +95,21 @@ export default function AssetFormModal({
     };
   }, [laboratoryId]);
 
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !saving) onClose();
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose, saving]);
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
@@ -151,16 +167,16 @@ export default function AssetFormModal({
 
   const technicianLocked = currentUser.role === "teknisi";
 
-  return (
+  const modal = (
     <div
-      className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/45 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-[80] flex min-w-0 items-end justify-center overflow-hidden bg-slate-950/45 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-[max(0.5rem,env(safe-area-inset-top))] backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="asset-form-title"
     >
-      <div className="max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl border border-white/70 bg-white p-5 shadow-2xl sm:max-w-3xl sm:rounded-3xl sm:p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
+      <div className="flex max-h-[calc(100dvh-1rem)] w-full min-w-0 flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white shadow-2xl sm:max-h-[92dvh] sm:max-w-3xl sm:rounded-3xl">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-6 sm:py-5">
+          <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
               {isEditing ? "Pembaruan terkontrol" : "Inventaris laboratorium"}
             </p>
@@ -171,15 +187,17 @@ export default function AssetFormModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"
+            disabled={saving}
+            className="shrink-0 rounded-full border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             aria-label="Tutup formulir aset"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <form className="mt-6 space-y-6" onSubmit={handleSubmit}>
-          <div className="grid gap-4 sm:grid-cols-2">
+        <form className="flex min-h-0 flex-1 flex-col" onSubmit={handleSubmit}>
+          <div className="min-h-0 flex-1 space-y-6 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
+          <div className="grid min-w-0 gap-4 sm:grid-cols-2">
             <label className="sm:col-span-2">
               <span className="mb-1.5 block text-sm font-medium text-slate-700">Laboratorium</span>
               <select
@@ -309,7 +327,7 @@ export default function AssetFormModal({
 
           {isEditing && (
             <>
-              <fieldset className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+              <fieldset className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50/70 p-3 sm:p-4">
                 <legend className="px-2 text-sm font-semibold text-slate-800">Kontak darurat lab</legend>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label>
@@ -332,7 +350,7 @@ export default function AssetFormModal({
                 </div>
               </fieldset>
 
-              <fieldset className="rounded-2xl border border-slate-200 p-4">
+              <fieldset className="min-w-0 rounded-2xl border border-slate-200 p-3 sm:p-4">
                 <legend className="px-2 text-sm font-semibold text-slate-800">SOP digital</legend>
                 <label className="flex items-start gap-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
                   <input
@@ -398,8 +416,9 @@ export default function AssetFormModal({
               {error}
             </p>
           )}
+          </div>
 
-          <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end">
+          <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-100 bg-white px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-12px_30px_rgba(15,23,42,0.05)] sm:flex-row sm:justify-end sm:px-6 sm:pb-4">
             <button
               type="button"
               onClick={onClose}
@@ -420,4 +439,6 @@ export default function AssetFormModal({
       </div>
     </div>
   );
+
+  return typeof document === "undefined" ? null : createPortal(modal, document.body);
 }

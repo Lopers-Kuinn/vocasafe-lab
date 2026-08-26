@@ -127,8 +127,8 @@ export default function ChecklistsPage() {
   return (
     <AppShell>
       <div className="space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
+        <div className="flex flex-col items-stretch gap-3 min-[420px]:flex-row min-[420px]:items-center min-[420px]:justify-between">
+          <div className="min-w-0">
             <h1 className="text-2xl font-bold text-slate-900">Checklist K3</h1>
             <p className="mt-1 text-sm text-slate-500">
               Hasil inspeksi K3 yang tersimpan di Supabase.
@@ -136,7 +136,7 @@ export default function ChecklistsPage() {
           </div>
           <Link
             href="/checklists/new"
-            className="inline-flex min-h-10 items-center gap-1 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+            className="inline-flex min-h-11 w-full items-center justify-center gap-1 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 min-[420px]:w-auto"
           >
             <Plus className="h-4 w-4" /> Isi Checklist
           </Link>
@@ -173,7 +173,7 @@ export default function ChecklistsPage() {
             </label>
           </div>
 
-          <div className="mt-4 flex gap-2 overflow-x-auto pb-1" aria-label="Filter status temuan">
+          <div className="mt-4 flex flex-wrap gap-2" aria-label="Filter status temuan">
             {findingFilters.map((filter) => {
               const active = findingFilter === filter.value;
               return (
@@ -277,14 +277,14 @@ export default function ChecklistsPage() {
             {filteredResults.map((result) => (
               <article
                 key={result.id}
-                className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+                className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0 flex-1">
-                    <h2 className="font-semibold text-slate-900">
+                    <h2 className="break-words font-semibold text-slate-900">
                       {result.template?.title ?? "Template tidak tersedia"}
                     </h2>
-                    <p className="mt-1 text-sm text-slate-500">
+                    <p className="mt-1 break-words text-sm text-slate-500">
                       {result.asset
                         ? `${result.asset.name} (${result.asset.code})`
                         : "Tanpa aset terkait"}
@@ -316,7 +316,7 @@ export default function ChecklistsPage() {
                 </div>
 
                 {result.overallNote && (
-                  <p className="mt-3 border-t border-slate-100 pt-3 text-sm text-slate-600">
+                  <p className="mt-3 whitespace-pre-wrap break-words border-t border-slate-100 pt-3 text-sm text-slate-600">
                     {result.overallNote}
                   </p>
                 )}

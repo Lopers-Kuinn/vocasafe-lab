@@ -203,7 +203,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-          <section className="soft-card rounded-[28px] p-5 sm:p-6">
+          <section className="soft-card min-w-0 overflow-hidden rounded-[28px] p-4 sm:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">Kelayakan</p>
@@ -311,7 +311,7 @@ export default function DashboardPage() {
                         <p className="mt-0.5 break-words text-[11px] leading-4 text-slate-500 min-[430px]:truncate">{report.asset?.code ?? "Tanpa aset"} &middot; {report.location}</p>
                       </div>
                     </div>
-                    <span className={`ml-12 w-fit shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold min-[430px]:ml-0 ${riskColors[report.riskCategory]}`}>
+                    <span className={`w-fit max-w-full shrink-0 break-words rounded-full px-2.5 py-1 text-[10px] font-bold ${riskColors[report.riskCategory]}`}>
                       {riskLabels[report.riskCategory]}
                     </span>
                   </Link>
@@ -320,7 +320,7 @@ export default function DashboardPage() {
             )}
           </section>
 
-          <section className="soft-card rounded-[28px] p-5 sm:p-6">
+          <section className="soft-card min-w-0 overflow-hidden rounded-[28px] p-4 sm:p-6">
             <div className="mb-5 flex items-center justify-between">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-teal-700">Inspeksi</p>
@@ -345,7 +345,7 @@ export default function DashboardPage() {
                         <p className="mt-0.5 break-words text-[11px] leading-4 text-slate-500 min-[430px]:truncate">{checklist.asset?.code ?? "Tanpa aset"} &middot; {new Date(checklist.completedAt).toLocaleDateString("id-ID")}</p>
                       </div>
                     </div>
-                    <span className={`ml-12 w-fit max-w-[calc(100%-3rem)] shrink-0 break-words rounded-full px-2.5 py-1 text-[10px] font-bold min-[430px]:ml-0 ${checklist.riskCategory ? riskColors[checklist.riskCategory] : "bg-emerald-100 text-emerald-800"}`}>
+                    <span className={`w-fit max-w-full shrink-0 break-words rounded-full px-2.5 py-1 text-[10px] font-bold ${checklist.riskCategory ? riskColors[checklist.riskCategory] : "bg-emerald-100 text-emerald-800"}`}>
                       {checklist.riskCategory ? `${riskLabels[checklist.riskCategory]} (${checklist.riskScore})` : "Tanpa temuan"}
                     </span>
                   </div>

@@ -112,13 +112,13 @@ export default function AssetActivitySection({
   }
 
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
+    <section className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+      <div className="flex min-w-0 flex-col items-stretch gap-3 min-[480px]:flex-row min-[480px]:items-start min-[480px]:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
           <div className="rounded-xl bg-emerald-100 p-2 text-emerald-700">
             <History className="h-5 w-5" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h2 className="text-lg font-semibold text-slate-900">Riwayat & Log Aktivitas</h2>
             <p className="mt-1 text-sm text-slate-500">
               Gabungan inspeksi, laporan risiko, servis, dan catatan perbaikan.
@@ -129,7 +129,7 @@ export default function AssetActivitySection({
           <button
             type="button"
             onClick={() => setShowForm((value) => !value)}
-            className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100"
+            className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 min-[480px]:w-auto"
           >
             {showForm ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
             {showForm ? "Tutup" : "Catat Aktivitas"}
@@ -138,7 +138,7 @@ export default function AssetActivitySection({
       </div>
 
       {showForm && canManage && (
-        <form onSubmit={handleSubmit} className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+        <form onSubmit={handleSubmit} className="mt-5 min-w-0 rounded-2xl border border-slate-200 bg-slate-50/70 p-3 sm:p-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <label>
               <span className="mb-1 block text-xs font-semibold text-slate-600">Jenis aktivitas</span>
@@ -186,7 +186,7 @@ export default function AssetActivitySection({
           <button
             type="submit"
             disabled={saving}
-            className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60"
+            className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800 disabled:opacity-60 min-[420px]:w-auto"
           >
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
             {saving ? "Menyimpan..." : "Simpan Aktivitas"}
@@ -229,15 +229,15 @@ export default function AssetActivitySection({
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-start justify-between gap-2">
-                    <h3 className="font-semibold text-slate-800">{activity.title}</h3>
-                    <time className="text-xs text-slate-400">
+                    <h3 className="min-w-0 break-words font-semibold text-slate-800">{activity.title}</h3>
+                    <time className="shrink-0 text-xs text-slate-400">
                       {new Intl.DateTimeFormat("id-ID", {
                         dateStyle: "medium",
                         timeStyle: "short",
                       }).format(new Date(activity.occurredAt))}
                     </time>
                   </div>
-                  {activity.note && <p className="mt-1 text-sm text-slate-500">{activity.note}</p>}
+                  {activity.note && <p className="mt-1 whitespace-pre-wrap break-words text-sm text-slate-500">{activity.note}</p>}
                 </div>
               </div>
             );

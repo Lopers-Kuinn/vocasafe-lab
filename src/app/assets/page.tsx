@@ -106,8 +106,8 @@ export default function AssetsPage() {
   return (
     <AppShell>
       <div className="space-y-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
+        <div className="flex flex-col items-stretch gap-3 min-[420px]:flex-row min-[420px]:items-start min-[420px]:justify-between">
+          <div className="min-w-0">
             <h1 className="text-2xl font-bold text-slate-900">Daftar Aset</h1>
             <p className="mt-1 text-sm text-slate-500">
               Data alat dan fasilitas laboratorium dari Supabase.
@@ -121,7 +121,7 @@ export default function AssetsPage() {
               <button
                 type="button"
                 onClick={() => setShowAssetForm(true)}
-                className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800"
+                className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 min-[420px]:w-auto"
               >
                 <Plus className="h-4 w-4" /> Tambah Aset
               </button>
@@ -218,18 +218,18 @@ export default function AssetsPage() {
                 <Link
                   key={asset.id}
                   href={`/assets/${encodeURIComponent(asset.code)}`}
-                  className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 >
                   <div className="flex items-start gap-3">
                     <div className="rounded-full bg-emerald-100 p-2">
                       <Package className="h-5 w-5 text-emerald-600" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-slate-900">{asset.name}</p>
-                      <p className="mt-0.5 text-sm text-slate-500">
+                      <p className="break-words font-semibold text-slate-900">{asset.name}</p>
+                      <p className="mt-0.5 break-words text-sm text-slate-500">
                         {asset.code} &middot; {kindLabels[asset.kind]}
                       </p>
-                      <p className="mt-1 text-sm text-slate-600">
+                      <p className="mt-1 break-words text-sm text-slate-600">
                         {asset.location || "Lokasi belum ditentukan"}
                       </p>
                       {asset.laboratory && (

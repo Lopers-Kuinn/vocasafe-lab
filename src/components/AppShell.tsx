@@ -3,9 +3,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ClipboardCheck,
+  Clock3,
   FileText,
   FileWarning,
   LayoutDashboard,
@@ -25,6 +26,14 @@ import {
 import ScrollAmbientBackground from "@/components/layout/ScrollAmbientBackground";
 import { canAccessRoute } from "@/lib/role-access";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import {
+  clearSessionActivity,
+  getLastSessionActivity,
+  isSessionActivityStorageKey,
+  markSessionActivity,
+  SESSION_IDLE_LIMIT_MS,
+  SESSION_IDLE_WARNING_MS,
+} from "@/lib/session-activity";
 import type { AppUser } from "@/types";
 
 const navItems = [
@@ -80,6 +89,29 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [authError, setAuthError] = useState("");
   const [logoutError, setLogoutError] = useState("");
   const [accessDenied, setAccessDenied] = useState(false);
+  const [inactivitySeconds, setInactivitySeconds] = useState(0);
+  const inactivityLogoutStarted = useRef(false);
+  const logoutReason = useRef<"inactive" | null>(null);
+  const lastActivityWrite = useRef(0);
+
+  const handleInactivityLogout = useCallback(async () => {
+    if (inactivityLogoutStarted.current) return;
+
+    inactivityLogoutStarted.current = true;
+    logoutReason.current = "inactive";
+    const { error } = await signOut();
+
+    if (error) {
+      inactivityLogoutStarted.current = false;
+      logoutReason.current = null;
+      setLogoutError(`Logout otomatis gagal: ${error}`);
+      return;
+    }
+
+    clearSessionActivity();
+    setInactivitySeconds(0);
+    router.replace("/login?reason=inactive");
+  }, [router]);
 
   const loadProfile = useCallback(async () => {
     setLoading(true);
@@ -116,10 +148,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         if (event === "SIGNED_OUT" || !session) {
           clearCachedCurrentUser();
+          clearSessionActivity();
           setUser(null);
           setAccessDenied(false);
           setLoading(false);
-          router.replace("/login");
+          router.replace(logoutReason.current === "inactive" ? "/login?reason=inactive" : "/login");
           return;
         }
 
@@ -142,8 +175,81 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [loadProfile, router]);
 
+  useEffect(() => {
+    if (!user) return;
+
+    const initialActivity = getLastSessionActivity();
+    if (initialActivity === null) {
+      const now = Date.now();
+      markSessionActivity(now);
+      lastActivityWrite.current = now;
+    }
+
+    function updateWarning(now = Date.now()) {
+      const lastActivity = getLastSessionActivity();
+      if (lastActivity === null) {
+        markSessionActivity(now);
+        lastActivityWrite.current = now;
+        return;
+      }
+
+      const elapsed = now - lastActivity;
+      if (elapsed >= SESSION_IDLE_LIMIT_MS) {
+        void handleInactivityLogout();
+        return;
+      }
+
+      const remaining = SESSION_IDLE_LIMIT_MS - elapsed;
+      const nextSeconds =
+        remaining <= SESSION_IDLE_WARNING_MS ? Math.max(1, Math.ceil(remaining / 1000)) : 0;
+      setInactivitySeconds((current) => (current === nextSeconds ? current : nextSeconds));
+    }
+
+    function recordActivity() {
+      const now = Date.now();
+      if (now - lastActivityWrite.current < 15_000) return;
+      lastActivityWrite.current = now;
+      markSessionActivity(now);
+      setInactivitySeconds((current) => (current === 0 ? current : 0));
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") updateWarning();
+    }
+
+    function handleWindowFocus() {
+      updateWarning();
+    }
+
+    function handleStorage(event: StorageEvent) {
+      if (isSessionActivityStorageKey(event.key)) updateWarning();
+    }
+
+    const interval = window.setInterval(updateWarning, 1000);
+    window.addEventListener("pointerdown", recordActivity, { passive: true });
+    window.addEventListener("keydown", recordActivity);
+    window.addEventListener("touchstart", recordActivity, { passive: true });
+    window.addEventListener("scroll", recordActivity, { passive: true });
+    window.addEventListener("focus", handleWindowFocus);
+    window.addEventListener("storage", handleStorage);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    updateWarning();
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("pointerdown", recordActivity);
+      window.removeEventListener("keydown", recordActivity);
+      window.removeEventListener("touchstart", recordActivity);
+      window.removeEventListener("scroll", recordActivity);
+      window.removeEventListener("focus", handleWindowFocus);
+      window.removeEventListener("storage", handleStorage);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [handleInactivityLogout, user]);
+
   async function handleLogout() {
     setLogoutError("");
+    logoutReason.current = null;
     const { error } = await signOut();
 
     if (error) {
@@ -151,7 +257,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    clearSessionActivity();
     router.replace("/login");
+  }
+
+  function handleContinueSession() {
+    const now = Date.now();
+    markSessionActivity(now);
+    lastActivityWrite.current = now;
+    setInactivitySeconds(0);
   }
 
   if (loading) {
@@ -313,6 +427,32 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </main>
       </div>
+
+      {inactivitySeconds > 0 && (
+        <div
+          role="alert"
+          className="premium-surface fixed inset-x-3 bottom-[calc(7rem+env(safe-area-inset-bottom))] z-[70] flex min-w-0 flex-col gap-3 rounded-2xl border border-amber-200/80 p-4 text-amber-950 shadow-2xl min-[430px]:left-auto min-[430px]:right-4 min-[430px]:max-w-sm lg:bottom-4"
+        >
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-amber-100 text-amber-700">
+              <Clock3 className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">Sesi akan segera berakhir</p>
+              <p className="mt-1 text-xs leading-5 text-amber-800">
+                Tidak ada aktivitas. Logout otomatis dalam {inactivitySeconds} detik.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleContinueSession}
+            className="min-h-10 w-full rounded-xl bg-amber-900 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-950"
+          >
+            Tetap masuk
+          </button>
+        </div>
+      )}
 
       <nav
         aria-label="Navigasi utama mobile"
