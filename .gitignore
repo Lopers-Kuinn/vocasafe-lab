@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local AI/tooling workspaces and generated code graph
+/.claude/
+/.codex/
+/.commandcode/
+/graphify-out/
