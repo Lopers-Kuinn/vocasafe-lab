@@ -23,6 +23,7 @@ Status saat ini adalah **D4 production-like migration** untuk demo hackathon dan
 - Print / Save as PDF via browser print
 - Admin management page untuk user profiles dan data dasar
 - AI-assisted recommendation provider-agnostic dengan fallback rule-based
+- Login demo satu klik untuk lima role pada environment demo terkontrol
 
 ## Stack
 
@@ -56,7 +57,7 @@ Status saat ini adalah **D4 production-like migration** untuk demo hackathon dan
 | `/reports` | Ya | Ya | Ya | Ya | Ya |
 | `/reports/new` | Ya | Ya | Ya | Tidak | Ya |
 | `/reports/[id]` | Ya | Ya | Ya | Ya | Ya |
-| `/checklists` | Tidak | Ya | Ya | Tidak | Ya |
+| `/checklists` | Tidak | Ya | Ya | Ya | Ya |
 | `/checklists/new` | Tidak | Ya | Ya | Tidak | Ya |
 | `/audit` | Tidak | Tidak | Ya | Ya | Ya |
 | `/admin` | Tidak | Tidak | Tidak | Tidak | Ya |
@@ -65,7 +66,7 @@ Status saat ini adalah **D4 production-like migration** untuk demo hackathon dan
 
 - Mahasiswa dan dosen dapat membuat dan melihat laporan sesuai policy RLS.
 - Teknisi, kepala laboratorium, dan admin dapat melihat laporan lintas user sesuai policy RLS.
-- Teknisi, kepala laboratorium, dan admin dapat mengubah status laporan dan menambah tindak lanjut.
+- Teknisi pada laboratoriumnya dan admin dapat mengubah status laporan dan menambah tindak lanjut. Kepala laboratorium bersifat view-only untuk mutation laporan.
 - Dosen, teknisi, dan admin dapat mengisi checklist.
 - Kepala laboratorium dapat membaca hasil checklist untuk konteks audit, tetapi tidak mengisi checklist.
 - Admin dapat melihat halaman `/admin` dan mengubah role/status user lain. Akun admin sendiri dilindungi dari self-demotion/self-deactivation.
@@ -131,7 +132,7 @@ npm run typecheck
 npm run build
 ```
 
-`npm run lint` saat ini masih memiliki known issue di `src/components/AppShell.tsx` untuk rule `react-hooks/set-state-in-effect`. Issue ini tercatat sebagai non-blocking untuk D4.
+`npm run lint` lulus pada pemeriksaan terakhir. Riwayat D4 pernah mencatat issue `react-hooks/set-state-in-effect` di `src/components/AppShell.tsx`; jalankan lint ulang setelah perubahan besar.
 
 ## Environment
 
@@ -147,6 +148,9 @@ AI_PROVIDER=none
 OPENAI_API_KEY=
 GEMINI_API_KEY=
 DEEPSEEK_API_KEY=
+NEXT_PUBLIC_DEMO_MODE_ENABLED=false
+DEMO_MODE_ENABLED=false
+DEMO_ACCOUNT_PASSWORD=
 ```
 
 Catatan:
@@ -154,6 +158,8 @@ Catatan:
 - Secret AI key bersifat server-only.
 - Jangan menaruh secret pada variabel `NEXT_PUBLIC_*`.
 - `SUPABASE_SERVICE_ROLE_KEY` hanya dipakai bila ada operasi server-only admin yang benar-benar membutuhkan, dan tidak boleh masuk Client Component.
+- `DEMO_ACCOUNT_PASSWORD` bersifat server-only. Mode demo production harus tetap
+  nonaktif kecuali menggunakan database khusus demo.
 
 ## Sumber Data D4
 
@@ -177,7 +183,10 @@ Sebelum deploy ke environment baru:
 3. Buat admin user pertama secara manual di Supabase Auth dan `public.user_profiles`.
 4. Buat bucket private `report-evidence`.
 5. Jalankan migration `supabase/migrations/002_d4_rls_hardening.sql`.
-6. Pastikan policy RLS dan Storage sudah diuji untuk role utama.
+6. Jalankan migration `004` sampai `013` secara berurutan sesuai nomor file.
+7. Pastikan bucket private `report-evidence`, `asset-documents`, dan
+   `checklist-evidence` tersedia.
+8. Pastikan policy RLS dan Storage sudah diuji untuk role utama.
 
 Detail ada di:
 
@@ -203,3 +212,4 @@ Detail ada di:
 - AI recommendation: `docs/ai-recommendation.md`
 - Testing checklist: `docs/testing-checklist.md`
 - Demo script: `docs/demo-script.md`
+- Akun demo: `docs/demo-accounts.md`

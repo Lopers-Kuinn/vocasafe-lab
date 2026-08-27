@@ -4,10 +4,47 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Eye, EyeOff, Loader2, ShieldCheck, Sparkles } from "lucide-react";
+import {
+  ArrowLeft,
+  BookOpenCheck,
+  Building2,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  GraduationCap,
+  Loader2,
+  ShieldCheck,
+  Sparkles,
+  Wrench,
+} from "lucide-react";
 import ScrollAmbientBackground from "@/components/layout/ScrollAmbientBackground";
 import { signInWithEmailPassword, signOut } from "@/lib/auth";
 import { clearSessionActivity, markSessionActivity } from "@/lib/session-activity";
+import type { UserRole } from "@/types";
+
+const demoRoleOptions = [
+  { role: "mahasiswa", label: "Mahasiswa", detail: "Lapor dan pantau", icon: GraduationCap },
+  { role: "dosen", label: "Dosen", detail: "Inspeksi dan laporan", icon: BookOpenCheck },
+  { role: "teknisi", label: "Teknisi", detail: "Tindak lanjut K3", icon: Wrench },
+  { role: "kepala_lab", label: "Kepala Lab", detail: "Kendali laboratorium", icon: Building2 },
+  { role: "admin", label: "Admin", detail: "Akses menyeluruh", icon: ShieldCheck },
+] satisfies Array<{
+  role: UserRole;
+  label: string;
+  detail: string;
+  icon: typeof ShieldCheck;
+}>;
+
+const demoModeVisible =
+  process.env.NODE_ENV !== "production" ||
+  process.env.NEXT_PUBLIC_DEMO_MODE_ENABLED === "true";
+
+function getSafeNextPath(): string {
+  const requestedPath = new URLSearchParams(window.location.search).get("next");
+  return requestedPath?.startsWith("/") && !requestedPath.startsWith("//")
+    ? requestedPath
+    : "/dashboard";
+}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,6 +54,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [notice, setNotice] = useState("");
+  const [demoLoadingRole, setDemoLoadingRole] = useState<UserRole | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -53,7 +91,37 @@ export default function LoginPage() {
     }
 
     markSessionActivity();
-    router.push("/dashboard");
+    router.push(getSafeNextPath());
+  }
+
+  async function handleDemoLogin(role: UserRole) {
+    if (demoLoadingRole || loading) return;
+
+    setError("");
+    setNotice("");
+    setDemoLoadingRole(role);
+
+    try {
+      const response = await fetch("/api/auth/demo-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      const result = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        setError(result.error ?? "Akun demo belum dapat digunakan.");
+        setDemoLoadingRole(null);
+        return;
+      }
+
+      clearSessionActivity();
+      markSessionActivity();
+      window.location.assign(getSafeNextPath());
+    } catch {
+      setError("Layanan akun demo sedang tidak tersedia. Silakan coba kembali.");
+      setDemoLoadingRole(null);
+    }
   }
 
   return (
@@ -68,7 +136,7 @@ export default function LoginPage() {
             </span>
             <span>
               <span className="block font-bold">VocaSafe Lab</span>
-              <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-200/70">Safety Intelligence</span>
+              <span className="block text-[10px] font-semibold uppercase tracking-[0.2em] text-emerald-200/70">Keselamatan Terpadu</span>
             </span>
           </Link>
 
@@ -93,7 +161,7 @@ export default function LoginPage() {
               <div className="translate-y-5 rounded-3xl border border-white/10 bg-gradient-to-br from-emerald-400/20 to-violet-300/10 p-4 backdrop-blur-lg">
                 <CheckCircle2 className="h-5 w-5 text-violet-200" />
                 <p className="mt-6 text-3xl font-semibold tracking-[-0.04em]">24/7</p>
-                <p className="mt-1 text-xs text-emerald-100/60">Monitoring terpusat</p>
+                <p className="mt-1 text-xs text-emerald-100/60">Pemantauan terpusat</p>
               </div>
             </div>
           </div>
@@ -115,13 +183,57 @@ export default function LoginPage() {
             </span>
             <div>
               <p className="font-bold text-[#102c23]">VocaSafe Lab</p>
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-700/60">Safety Intelligence</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-700/60">Keselamatan Terpadu</p>
             </div>
           </div>
 
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Selamat datang kembali</p>
           <h2 className="mt-3 text-3xl font-semibold leading-tight tracking-[-0.045em] text-[#102c23] min-[390px]:text-4xl">Masuk ke ruang kerja</h2>
           <p className="mt-3 text-sm leading-6 text-slate-500">Gunakan akun yang telah terdaftar untuk melanjutkan monitoring K3.</p>
+
+          {demoModeVisible && (
+            <section className="mt-7 min-w-0" aria-labelledby="demo-account-heading">
+              <div className="flex items-end justify-between gap-3 px-1">
+                <div>
+                  <h3 id="demo-account-heading" className="text-sm font-bold text-slate-900">
+                    Masuk dengan akun demo
+                  </h3>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Pilih peran untuk melihat tampilan dan hak aksesnya.
+                  </p>
+                </div>
+                <span className="shrink-0 text-[10px] font-semibold text-emerald-700 sm:hidden">
+                  Geser ke samping
+                </span>
+              </div>
+
+              <div className="mt-3 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {demoRoleOptions.map(({ role, label, detail, icon: Icon }) => {
+                  const isLoading = demoLoadingRole === role;
+                  return (
+                    <button
+                      key={role}
+                      type="button"
+                      disabled={Boolean(demoLoadingRole) || loading}
+                      onClick={() => void handleDemoLogin(role)}
+                      className="group min-h-24 min-w-[148px] snap-start rounded-2xl border border-emerald-950/10 bg-white/80 p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <span className="flex items-center justify-between gap-3">
+                        <span className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-50 text-emerald-700 transition group-hover:bg-emerald-700 group-hover:text-white">
+                          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Icon className="h-4 w-4" />}
+                        </span>
+                        <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-700">
+                          Demo
+                        </span>
+                      </span>
+                      <span className="mt-3 block text-sm font-bold text-slate-900">{label}</span>
+                      <span className="mt-0.5 block text-[11px] text-slate-500">{detail}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
           <form onSubmit={handleSubmit} className="premium-surface mt-8 min-w-0 max-w-full space-y-5 rounded-[28px] p-4 min-[390px]:p-5 sm:rounded-[32px] sm:p-7">
             <div>
@@ -180,7 +292,7 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || Boolean(demoLoadingRole)}
               className="flex h-13 w-full items-center justify-center gap-2 rounded-2xl bg-[#102c23] px-4 text-sm font-semibold text-white shadow-[0_16px_32px_rgba(16,44,35,0.2)] transition hover:-translate-y-0.5 hover:bg-[#164535] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -193,7 +305,7 @@ export default function LoginPage() {
           </form>
 
           <p className="mt-5 text-center text-[10px] leading-4 text-slate-400">
-            Development lokal memerlukan konfigurasi Supabase pada environment aplikasi.
+            Gunakan akun yang telah terdaftar untuk masuk ke ruang kerja VocaSafe Lab.
           </p>
         </section>
       </main>
