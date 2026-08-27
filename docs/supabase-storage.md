@@ -113,3 +113,25 @@ Untuk kondisi D4 sekarang:
 9. Login sebagai role yang tidak berhak membaca laporan tersebut dan pastikan akses ditolak oleh RLS.
 
 Jika laporan berhasil dibuat tetapi upload atau metadata gagal, UI menampilkan peringatan tanpa membuat aplikasi crash. Object orphan akibat metadata gagal perlu dibersihkan secara administratif karena policy delete Storage tidak dibuka untuk client.
+
+## Dokumen Aset K3
+
+Migration `010_asset_k3_operational_hardening.sql` menambahkan bucket private
+terpisah bernama `asset-documents`. Bucket dibuat oleh migration dengan batas
+10 MB dan MIME type PDF, JPG, PNG, serta WebP.
+
+Kontrak path:
+
+```text
+assets/{assetId}/{randomUuid}-{safeFileName}
+```
+
+Metadata dokumen umum disimpan pada `public.asset_documents`. Dokumen yang
+melekat pada riksa uji atau kalibrasi disimpan pada
+`public.asset_certificates`. Akses baca mengikuti laboratorium aset, sedangkan
+upload hanya diizinkan untuk admin atau teknisi pengelola laboratorium melalui
+`can_manage_asset_data()`.
+
+UI membuat signed URL berdurasi singkat saat pengguna membuka dokumen. Bucket
+tidak boleh diubah menjadi public dan tidak memerlukan environment variable atau
+service-role key pada Client Component.

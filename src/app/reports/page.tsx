@@ -2,11 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, FileWarning, Loader2, MapPin, Plus, ShieldAlert } from "lucide-react";
+import { AlertCircle, FileWarning, Loader2, MapPin, Plus, Search, ShieldAlert, Tag } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { fetchLaboratories, type LaboratorySummary } from "@/lib/assets";
-import { fetchReports, type DatabaseReport } from "@/lib/reports";
-import type { ReportStatus, RiskLevel } from "@/types";
+import {
+  fetchReports,
+  HAZARD_CATEGORY_LABELS,
+  REPORT_TYPE_LABELS,
+  type DatabaseReport,
+} from "@/lib/reports";
+import type { HazardCategory, ReportStatus, ReportType, RiskLevel } from "@/types";
 
 const riskColors: Record<RiskLevel, string> = {
   rendah: "bg-green-100 text-green-800",
@@ -42,6 +47,9 @@ export default function ReportsPage() {
   const [laboratories, setLaboratories] = useState<LaboratorySummary[]>([]);
   const [riskFilter, setRiskFilter] = useState<"semua" | RiskLevel>("semua");
   const [laboratoryFilter, setLaboratoryFilter] = useState("semua");
+  const [typeFilter, setTypeFilter] = useState<"semua" | ReportType>("semua");
+  const [categoryFilter, setCategoryFilter] = useState<"semua" | HazardCategory>("semua");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -52,7 +60,7 @@ export default function ReportsPage() {
       setLaboratories(laboratoryResult.laboratories);
       setError(
         result.error || laboratoryResult.error
-          ? `Laporan tidak dapat dimuat dari Supabase: ${[result.error, laboratoryResult.error]
+          ? `Sebagian laporan belum dapat dimuat: ${[result.error, laboratoryResult.error]
               .filter(Boolean)
               .join("; ")}`
           : "",
@@ -67,12 +75,29 @@ export default function ReportsPage() {
 
   const filteredReports = useMemo(
     () =>
-      reports.filter(
-        (report) =>
+      reports.filter((report) => {
+        const term = search.trim().toLowerCase();
+        const searchable = [
+          report.title,
+          report.description,
+          report.location,
+          report.asset?.name,
+          report.asset?.code,
+          report.laboratory?.name,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+
+        return (
           (riskFilter === "semua" || report.riskCategory === riskFilter) &&
-          (laboratoryFilter === "semua" || report.laboratoryId === laboratoryFilter),
-      ),
-    [laboratoryFilter, reports, riskFilter],
+          (laboratoryFilter === "semua" || report.laboratoryId === laboratoryFilter) &&
+          (typeFilter === "semua" || report.reportType === typeFilter) &&
+          (categoryFilter === "semua" || report.hazardCategory === categoryFilter) &&
+          (!term || searchable.includes(term))
+        );
+      }),
+    [categoryFilter, laboratoryFilter, reports, riskFilter, search, typeFilter],
   );
 
   return (
@@ -82,7 +107,7 @@ export default function ReportsPage() {
           <div className="min-w-0">
             <h1 className="text-2xl font-bold text-slate-900">Daftar Laporan</h1>
             <p className="mt-1 text-sm text-slate-500">
-              Data laporan bahaya tersimpan dan dimuat dari Supabase.
+              Pantau laporan bahaya dan perkembangan tindak lanjutnya.
             </p>
           </div>
           <Link
@@ -93,7 +118,12 @@ export default function ReportsPage() {
           </Link>
         </div>
 
-        <section className="grid gap-3 rounded-2xl border border-white/80 bg-white/85 p-4 shadow-sm backdrop-blur-xl sm:grid-cols-2">
+        <section className="grid gap-3 rounded-2xl border border-white/80 bg-white/85 p-4 shadow-sm backdrop-blur-xl sm:grid-cols-2 xl:grid-cols-4">
+          <label className="relative block sm:col-span-2 xl:col-span-4">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Cari laporan</span>
+            <Search className="pointer-events-none absolute bottom-3 left-3 h-4 w-4 text-slate-400" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Judul, deskripsi, aset, kode, atau lokasi" className="min-h-11 w-full rounded-xl border border-slate-200 bg-white py-2 pl-10 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" />
+          </label>
           <label className="relative block">
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
               Tingkat bahaya
@@ -111,6 +141,24 @@ export default function ReportsPage() {
               <option value="tinggi">Tinggi</option>
               <option value="sedang">Sedang</option>
               <option value="rendah">Rendah</option>
+            </select>
+          </label>
+
+          <label className="relative block">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Jenis laporan</span>
+            <Tag className="pointer-events-none absolute bottom-3 left-3 h-4 w-4 text-slate-400" />
+            <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as "semua" | ReportType)} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white py-2 pl-10 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">
+              <option value="semua">Semua jenis laporan</option>
+              {Object.entries(REPORT_TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+
+          <label className="relative block">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Kategori bahaya</span>
+            <ShieldAlert className="pointer-events-none absolute bottom-3 left-3 h-4 w-4 text-slate-400" />
+            <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value as "semua" | HazardCategory)} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white py-2 pl-10 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">
+              <option value="semua">Semua kategori bahaya</option>
+              {Object.entries(HAZARD_CATEGORY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
           </label>
 
@@ -152,7 +200,7 @@ export default function ReportsPage() {
             <FileWarning className="mx-auto mb-2 h-10 w-10 text-slate-300" />
             <p className="text-slate-500">
               {reports.length === 0
-                ? "Belum ada laporan di Supabase."
+                ? "Belum ada laporan yang dapat ditampilkan."
                 : "Tidak ada laporan yang sesuai dengan filter."}
             </p>
           </div>
@@ -177,7 +225,7 @@ export default function ReportsPage() {
                     </p>
                     <p className="mt-1 break-words text-xs text-slate-400">
                       {report.laboratory?.name ?? report.location} &middot;{" "}
-                      {new Date(report.reportedAt).toLocaleDateString("id-ID", {
+                      {new Date(report.occurredAt).toLocaleDateString("id-ID", {
                         day: "numeric",
                         month: "short",
                         year: "numeric",
@@ -185,6 +233,9 @@ export default function ReportsPage() {
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                    <span className="inline-flex rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">{REPORT_TYPE_LABELS[report.reportType]}</span>
+                    <span className="inline-flex rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-medium text-violet-700">{HAZARD_CATEGORY_LABELS[report.hazardCategory]}</span>
+                    {report.hazardActive && <span className="inline-flex rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-800">Bahaya aktif</span>}
                     <span
                       className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${riskColors[report.riskCategory]}`}
                     >

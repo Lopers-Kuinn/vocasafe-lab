@@ -16,6 +16,25 @@ export type ReportStatus =
 
 export type RiskLevel = "rendah" | "sedang" | "tinggi" | "kritis";
 
+export type ReportType =
+  | "kondisi_tidak_aman"
+  | "near_miss"
+  | "kecelakaan_cedera"
+  | "kerusakan_aset"
+  | "kebakaran_ledakan"
+  | "tumpahan_bahan"
+  | "keluhan_kesehatan";
+
+export type HazardCategory =
+  | "listrik"
+  | "mekanik"
+  | "kebakaran"
+  | "bahan_kimia"
+  | "ergonomi"
+  | "fasilitas_k3"
+  | "lingkungan"
+  | "lainnya";
+
 export type ChecklistAnswer = "ya" | "tidak" | "tidak_berlaku";
 
 export interface User {

@@ -10,7 +10,7 @@ Gunakan checklist ini sebelum merge, deploy, presentasi, atau pengambilan screen
 - [ ] `.env.local` tidak tracked oleh Git.
 - [ ] `npm run typecheck` lulus.
 - [ ] `npm run build` lulus.
-- [ ] `npm run lint` dicatat sebagai known issue jika masih gagal di `src/components/AppShell.tsx` rule `react-hooks/set-state-in-effect`.
+- [ ] `npm run lint` dijalankan; jika gagal, catat error aktual (riwayat issue ada di `src/components/AppShell.tsx` rule `react-hooks/set-state-in-effect`).
 
 ## 2. Auth dan Route Guard
 
@@ -73,11 +73,11 @@ Gunakan checklist ini sebelum merge, deploy, presentasi, atau pengambilan screen
 - [ ] Bisa akses `/audit`.
 - [ ] Tidak bisa akses `/scan`.
 - [ ] Tidak bisa akses `/reports/new`.
-- [ ] Tidak bisa akses `/checklists`.
+- [ ] Bisa akses `/checklists` untuk membaca hasil inspeksi.
 - [ ] Tidak bisa akses `/checklists/new`.
 - [ ] Tidak bisa akses `/admin`.
 - [ ] Bisa melihat laporan lintas user sesuai RLS.
-- [ ] Bisa mengubah status laporan dan menambah follow-up sesuai D4-13 RLS.
+- [ ] Tidak melihat kontrol update status/follow-up laporan (view-only).
 
 ### Admin
 
@@ -241,7 +241,7 @@ Gunakan checklist ini sebelum merge, deploy, presentasi, atau pengambilan screen
 - [ ] Full manual browser QA lulus.
 - [ ] `npm run typecheck` lulus.
 - [ ] `npm run build` lulus.
-- [ ] Lint known issue AppShell dicatat sebagai non-blocking jika belum diperbaiki.
+- [ ] Hasil lint aktual dicatat; jangan mengasumsikan known issue lama masih terjadi.
 - [ ] PR body sesuai scope D4.
 - [ ] Tidak ada secret di repo.
 - [ ] Belum merge sebelum approval.

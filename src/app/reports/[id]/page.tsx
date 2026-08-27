@@ -8,10 +8,14 @@ import {
   ArrowLeft,
   CheckCircle2,
   Clock,
+  EyeOff,
   ExternalLink,
   ImageIcon,
   Loader2,
   Save,
+  ShieldCheck,
+  Siren,
+  Users,
 } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { getCurrentUserProfile } from "@/lib/auth";
@@ -19,6 +23,8 @@ import { canEditReportStatus } from "@/lib/role-access";
 import {
   fetchReportById,
   fetchReportFollowUps,
+  HAZARD_CATEGORY_LABELS,
+  REPORT_TYPE_LABELS,
   saveReportFollowUp,
   type DatabaseReport,
   type ReportFollowUp,
@@ -98,7 +104,7 @@ export default function ReportDetailPage() {
       setNotFound(!result.report && !result.error);
       setError(
         result.error
-          ? `Laporan tidak dapat dimuat dari Supabase: ${result.error}`
+          ? "Laporan belum dapat dimuat. Silakan coba kembali."
           : "",
       );
       setAttachmentError(
@@ -259,6 +265,12 @@ export default function ReportDetailPage() {
               </p>
             </div>
             <div className="flex flex-wrap gap-2 sm:justify-end">
+              {report.isConfidential && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2.5 py-0.5 text-xs font-medium text-violet-800"><EyeOff className="h-3 w-3" /> Rahasia</span>
+              )}
+              {report.hazardActive && report.status !== "selesai" && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-800"><Siren className="h-3 w-3" /> Bahaya aktif</span>
+              )}
               <span
                 className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${riskColors[report.riskCategory]}`}
               >
@@ -274,9 +286,31 @@ export default function ReportDetailPage() {
 
           <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2">
             <div>
+              <dt className="font-medium text-slate-700">Jenis laporan</dt>
+              <dd className="mt-1 text-slate-600">{REPORT_TYPE_LABELS[report.reportType]}</dd>
+            </div>
+            <div>
+              <dt className="font-medium text-slate-700">Kategori bahaya</dt>
+              <dd className="mt-1 text-slate-600">{HAZARD_CATEGORY_LABELS[report.hazardCategory]}</dd>
+            </div>
+            <div>
+              <dt className="font-medium text-slate-700">Waktu ditemukan/terjadi</dt>
+              <dd className="mt-1 text-slate-600">{new Date(report.occurredAt).toLocaleString("id-ID", { dateStyle: "long", timeStyle: "short" })}</dd>
+            </div>
+            <div>
+              <dt className="font-medium text-slate-700">Laboratorium</dt>
+              <dd className="mt-1 text-slate-600">{report.laboratory?.name ?? "Tidak tersedia"}</dd>
+            </div>
+            <div>
               <dt className="font-medium text-slate-700">Lokasi</dt>
               <dd className="mt-1 text-slate-600">{report.location}</dd>
             </div>
+            {report.activityAtTime && (
+              <div className="sm:col-span-2">
+                <dt className="font-medium text-slate-700">Aktivitas saat kejadian</dt>
+                <dd className="mt-1 text-slate-600">{report.activityAtTime}</dd>
+              </div>
+            )}
             <div>
               <dt className="font-medium text-slate-700">Aset terkait</dt>
               <dd className="mt-1 text-slate-600">
@@ -300,12 +334,31 @@ export default function ReportDetailPage() {
             </div>
           </dl>
 
+          {report.hazardActive && report.status !== "selesai" && (
+            <div role="alert" className="mt-5 flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+              <Siren className="mt-0.5 h-5 w-5 shrink-0" />
+              <div><p className="font-semibold">Laporan menyatakan bahaya masih aktif.</p><p className="mt-1">Pastikan area diamankan dan petugas laboratorium segera melakukan verifikasi.</p></div>
+            </div>
+          )}
+
+          <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-emerald-600" /><h2 className="font-semibold text-slate-800">Pengamanan awal</h2></div>
+            <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+              <div><dt className="font-medium text-slate-700">Kondisi saat dilaporkan</dt><dd className="mt-1 text-slate-600">{report.hazardActive ? "Masih berbahaya" : "Sudah berhenti atau diamankan"}</dd></div>
+              <div><dt className="font-medium text-slate-700">Laboran/PIC diberi tahu</dt><dd className="mt-1 text-slate-600">{report.picNotified ? "Sudah" : "Belum / tidak dicatat"}</dd></div>
+              <div className="sm:col-span-2"><dt className="font-medium text-slate-700">Tindakan sementara</dt><dd className="mt-1 whitespace-pre-wrap text-slate-600">{report.immediateAction || "Belum ada tindakan yang dicatat."}</dd></div>
+              <div><dt className="font-medium text-slate-700">Orang terdampak</dt><dd className="mt-1 text-slate-600">{report.peopleAffected ? "Ada" : "Tidak ada"}</dd></div>
+              {report.peopleAffected && <div><dt className="font-medium text-slate-700">Kondisi/pertolongan</dt><dd className="mt-1 whitespace-pre-wrap text-slate-600">{report.injuryDetails}</dd></div>}
+              {report.witnessDetails && <div className="sm:col-span-2"><dt className="flex items-center gap-1 font-medium text-slate-700"><Users className="h-4 w-4" /> Saksi/pihak yang mengetahui</dt><dd className="mt-1 text-slate-600">{report.witnessDetails}</dd></div>}
+            </dl>
+          </div>
+
           <div className="mt-5 rounded-md bg-slate-50 p-4">
             <h2 className="font-semibold text-slate-800">Ringkasan Risiko</h2>
             <div className="mt-2 grid grid-cols-1 gap-2 text-sm text-slate-600 min-[360px]:grid-cols-2 sm:grid-cols-4">
-              <p>Severity: {report.severity}</p>
-              <p>Probability: {report.probability}</p>
-              <p>Exposure: {report.exposure}</p>
+              <p>Dampak: {report.severity}</p>
+              <p>Kemungkinan: {report.probability}</p>
+              <p>Paparan: {report.exposure}</p>
               <p>Skor: {report.riskScore}</p>
             </div>
             <p className="mt-3 text-sm text-slate-600">{report.recommendation}</p>

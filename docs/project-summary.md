@@ -32,11 +32,11 @@ Solusi utama:
 - **Dosen**: memantau asset, membuat laporan, mengisi checklist.
 - **Teknisi/Laboran**: menindaklanjuti laporan, mengisi checklist, melihat audit.
 - **Kepala Laboratorium**: memantau dashboard, laporan, dan audit report.
-- **Admin**: mengelola seluruh alur demo dan melakukan tindak lanjut.
+- **Admin**: mengelola akses user/data dasar dan melakukan tindak lanjut sesuai RLS.
 
 ## Fitur
 
-- Dummy login role
+- Login Supabase dengan role dari `user_profiles`
 - Dashboard monitoring
 - Data alat/fasilitas
 - Detail asset + QR Code
@@ -61,12 +61,12 @@ Solusi utama:
 - Tailwind CSS
 - qrcode.react
 - lucide-react
-- Dummy data
-- localStorage
+- Supabase Auth, Database, Storage, dan RLS
+- Dummy data/localStorage legacy (bukan sumber route D4)
 
 ## Alur Kerja
 
-1. Pengguna login dengan role demo.
+1. Pengguna login dengan akun Supabase; role aktif dibaca dari `user_profiles`.
 2. Pengguna membuka dashboard untuk melihat kondisi risiko.
 3. Pengguna melihat daftar asset dan membuka detail asset.
 4. Detail asset menampilkan SOP digital dan QR Code.
@@ -85,29 +85,28 @@ Solusi utama:
 - Role access sesuai kebutuhan pengguna laboratorium.
 - QR Code dan SOP membantu akses informasi asset.
 - Dashboard dan audit report mendukung pengambilan keputusan.
-- Prototype tidak membutuhkan backend sehingga mudah dijalankan lokal.
-- Data lokal memungkinkan demo interaktif tanpa server.
+- Supabase menyediakan backend terpusat, Auth, RLS, dan Storage untuk demo production-like.
+- Fallback rule-based dan input manual menjaga alur demo tetap dapat diuji saat provider eksternal tidak tersedia.
 
-## Batasan Prototype
+## Status dan Batasan Prototype
 
-- Belum memakai database production seperti Supabase.
-- Belum memakai API AI sungguhan.
-- Belum memakai kamera QR sungguhan.
-- Belum memakai upload file atau storage server.
-- Belum memakai authentication production.
-- Belum memakai library PDF eksternal.
-- Data tersimpan di localStorage sehingga bergantung pada browser/perangkat.
+- Route D4 sudah memakai Supabase sebagai database production-like, Auth, RLS, dan Storage evidence.
+- Provider AI production bersifat opsional dengan fallback rule-based.
+- QR scanner kamera tersedia jika permission/perangkat mendukung; input manual tetap tersedia.
+- Upload evidence memakai Supabase Storage private dan signed URL.
+- Print audit memakai `window.print()` tanpa library PDF eksternal.
+- Helper dummy/localStorage lama dipertahankan sebagai artefak kompatibilitas, bukan sumber route D4.
 
 ## Pengembangan Lanjutan
 
 Tahap berikutnya yang dapat dikembangkan:
 
-- Integrasi Supabase untuk database dan authentication.
-- QR scanner sungguhan menggunakan kamera browser.
-- Upload bukti foto ke storage.
-- AI-assisted recommendation untuk tindak lanjut risiko.
-- Dashboard grafik tren risiko.
+- Penyempurnaan operasional Supabase dan observability.
+- Penyempurnaan QR scanner dan fallback input manual.
+- Penyempurnaan evidence lifecycle pada private storage.
+- Penyempurnaan AI-assisted recommendation untuk tindak lanjut risiko.
+- Dashboard grafik/tren risiko lanjutan.
 - Notifikasi untuk laporan kritis.
 - Export audit report ke PDF production.
 - Manajemen master data asset, SOP, user, dan checklist.
-- Multi-lab support untuk beberapa jurusan atau kampus.
+- Ekspansi multi-lab untuk lebih banyak jurusan atau kampus.

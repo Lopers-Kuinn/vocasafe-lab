@@ -275,7 +275,7 @@ export default function AdminPage() {
             <h1 className="min-w-0 text-2xl font-bold leading-tight text-slate-900">Administrasi Sistem</h1>
           </div>
           <p className="mt-1 text-sm text-slate-500">
-            Monitoring profil pengguna dan data dasar VocaSafe Lab dari Supabase.
+            Kelola profil pengguna dan data dasar VocaSafe Lab.
           </p>
         </header>
 
@@ -312,7 +312,7 @@ export default function AdminPage() {
                     </h2>
                   </div>
                   <p className="mt-1 text-sm text-slate-500">
-                    Daftar profil aplikasi. UUID tidak ditampilkan pada halaman ini.
+                    Daftar pengguna yang terhubung dengan aplikasi.
                   </p>
                 </div>
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
@@ -323,9 +323,8 @@ export default function AdminPage() {
               <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
                 <p className="font-semibold">Kontrol akses profil</p>
                 <p className="mt-1">
-                  Admin dapat mengubah role dan status aktif user lain setelah
-                  migration D4-13 diterapkan. Akun sendiri dilindungi dari
-                  perubahan role dan status.
+                  Admin dapat mengubah peran dan status aktif pengguna lain.
+                  Akun sendiri dilindungi dari perubahan peran dan status.
                 </p>
               </div>
 
@@ -407,7 +406,7 @@ export default function AdminPage() {
                   </h2>
                 </div>
                 <p className="mt-1 text-sm text-slate-500">
-                  Data operasional ditampilkan read-only pada tahap D4-12.
+                  Data operasional ini hanya dapat dilihat dan tidak dapat diubah dari halaman ini.
                 </p>
               </div>
 

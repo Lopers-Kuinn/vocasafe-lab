@@ -6,7 +6,7 @@ Dokumen ini berisi skenario demo langkah demi langkah untuk presentasi VocaSafe 
 
 1. Jalankan aplikasi lokal dengan `npm run dev`.
 2. Buka aplikasi di browser.
-3. Jika data demo lokal sudah terlalu banyak, browser localStorage dapat dibersihkan secara manual sebelum demo. Jangan lakukan ini saat data demo ingin dipertahankan.
+3. Pastikan environment Supabase yang dipakai demo sudah aktif. Route utama membaca data dari Supabase; localStorage hanya artefak legacy/non-runtime.
 4. Gunakan resolusi desktop untuk demo utama, lalu tunjukkan tampilan mobile bila diperlukan.
 
 ## Skenario Demo Utama
@@ -19,7 +19,7 @@ Dokumen ini berisi skenario demo langkah demi langkah untuk presentasi VocaSafe 
 
 ### 2. Login Sebagai Admin
 
-1. Pilih role **Admin Sistem**.
+1. Login dengan akun Supabase ber-role **Admin Sistem**.
 2. Masuk ke dashboard.
 3. Jelaskan bahwa admin memiliki akses penuh untuk demo.
 
@@ -31,7 +31,7 @@ Dokumen ini berisi skenario demo langkah demi langkah untuk presentasi VocaSafe 
    - Belum selesai
 2. Tunjukkan ringkasan risiko berdasarkan kategori.
 3. Tunjukkan daftar laporan terbaru.
-4. Jelaskan bahwa dashboard membaca dummy data dan laporan lokal dari localStorage.
+4. Jelaskan bahwa dashboard membaca ringkasan live dari Supabase sesuai scope laboratorium pengguna.
 
 ### 4. Tampilkan Data Asset
 
@@ -93,7 +93,7 @@ Risk Score = Severity x Probability x Exposure
 
 1. Klik **Kirim Laporan**.
 2. Pastikan laporan baru tampil di halaman daftar laporan.
-3. Jelaskan bahwa laporan tersimpan di localStorage.
+3. Jelaskan bahwa laporan tersimpan di Supabase dan dilindungi RLS.
 
 ### 12. Login Sebagai Teknisi
 
@@ -130,7 +130,7 @@ Risk Score = Severity x Probability x Exposure
 
 1. Klik keluar.
 2. Login sebagai **Kepala Laboratorium**.
-3. Jelaskan bahwa kepala lab dapat melihat dashboard, asset, laporan, dan audit, tetapi tidak membuat laporan baru atau checklist.
+3. Jelaskan bahwa kepala lab dapat melihat dashboard, asset, laporan, hasil checklist, dan audit; kepala lab tidak membuat laporan baru, tidak mengisi checklist, dan view-only untuk perubahan status laporan.
 
 ### 17. Buka Audit Report
 
@@ -162,4 +162,4 @@ Akhiri demo dengan menekankan manfaat utama:
 - Mahasiswa/dosen dapat melaporkan bahaya secara cepat.
 - Teknisi dapat menindaklanjuti laporan dengan status yang tercatat.
 - Kepala lab/admin dapat memantau risiko melalui dashboard dan audit report.
-- Prototype siap dikembangkan ke backend production seperti Supabase jika diperlukan pada tahap berikutnya.
+- Prototype sudah memakai Supabase untuk Auth, database, Storage evidence, RLS, dan audit; provider AI tetap opsional dengan fallback rule-based.

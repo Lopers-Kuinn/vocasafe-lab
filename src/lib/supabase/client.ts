@@ -6,7 +6,7 @@ function getPublicSupabaseEnv() {
 
   if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error(
-      "Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY. Fill .env.local before using Supabase client.",
+      "Layanan aplikasi sedang tidak tersedia. Silakan coba kembali.",
     );
   }
 

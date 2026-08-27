@@ -11,6 +11,7 @@ import {
   Search,
 } from "lucide-react";
 import AppShell from "@/components/AppShell";
+import { getCurrentUserProfile } from "@/lib/auth";
 import {
   fetchActiveChecklistTemplates,
   fetchChecklistResults,
@@ -54,6 +55,7 @@ function matchesTimeFilter(value: string, filter: TimeFilter): boolean {
   const now = new Date();
   if (filter === "hari_ini") {
     return (
+      date.getTime() <= now.getTime() &&
       date.getFullYear() === now.getFullYear() &&
       date.getMonth() === now.getMonth() &&
       date.getDate() === now.getDate()
@@ -61,7 +63,10 @@ function matchesTimeFilter(value: string, filter: TimeFilter): boolean {
   }
 
   const days = filter === "7_hari" ? 7 : filter === "30_hari" ? 30 : 365;
-  return date.getTime() >= now.getTime() - days * 24 * 60 * 60 * 1000;
+  return (
+    date.getTime() >= now.getTime() - days * 24 * 60 * 60 * 1000 &&
+    date.getTime() <= now.getTime()
+  );
 }
 
 export default function ChecklistsPage() {
@@ -72,6 +77,10 @@ export default function ChecklistsPage() {
   const [search, setSearch] = useState("");
   const [findingFilter, setFindingFilter] = useState<FindingFilter>("semua");
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("semua");
+  const [assetFilter, setAssetFilter] = useState("semua");
+  const [templateFilter, setTemplateFilter] = useState("semua");
+  const [laboratoryFilter, setLaboratoryFilter] = useState("semua");
+  const [canCreate, setCanCreate] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -79,14 +88,21 @@ export default function ChecklistsPage() {
     void Promise.all([
       fetchChecklistResults(),
       fetchActiveChecklistTemplates(),
-    ]).then(([result, templateResult]) => {
+      getCurrentUserProfile(),
+    ]).then(([result, templateResult, profileResult]) => {
       if (!active) return;
       setResults(result.results);
       setTemplates(templateResult.templates);
+      setCanCreate(
+        Boolean(
+          profileResult.user &&
+            ["dosen", "teknisi", "admin"].includes(profileResult.user.role),
+        ),
+      );
       const errors = [result.error, templateResult.error].filter(Boolean);
       setError(
         errors.length > 0
-          ? `Data checklist tidak dapat dimuat dari Supabase: ${errors.join("; ")}`
+          ? "Sebagian data checklist tidak dapat dimuat. Coba lagi atau hubungi admin jika masalah berlanjut."
           : "",
       );
       setLoading(false);
@@ -115,14 +131,28 @@ export default function ChecklistsPage() {
         (findingFilter === "tanpa_temuan"
           ? !result.hasRiskFinding
           : result.hasRiskFinding && result.riskCategory === findingFilter);
+      const matchesAsset = assetFilter === "semua" || result.assetId === assetFilter;
+      const matchesTemplate =
+        templateFilter === "semua" || result.templateId === templateFilter;
+      const matchesLaboratory =
+        laboratoryFilter === "semua" || result.laboratoryId === laboratoryFilter;
 
       return (
         matchesSearch &&
         matchesFinding &&
+        matchesAsset &&
+        matchesTemplate &&
+        matchesLaboratory &&
         matchesTimeFilter(result.completedAt, timeFilter)
       );
     });
-  }, [findingFilter, results, search, timeFilter]);
+  }, [assetFilter, findingFilter, laboratoryFilter, results, search, templateFilter, timeFilter]);
+
+  const filterOptions = useMemo(() => ({
+    assets: [...new Map(results.filter((result) => result.asset).map((result) => [result.assetId, result.asset])).entries()],
+    templates: [...new Map(results.filter((result) => result.template).map((result) => [result.templateId, result.template])).entries()],
+    laboratories: [...new Map(results.filter((result) => result.laboratory).map((result) => [result.laboratoryId, result.laboratory])).entries()],
+  }), [results]);
 
   return (
     <AppShell>
@@ -131,15 +161,17 @@ export default function ChecklistsPage() {
           <div className="min-w-0">
             <h1 className="text-2xl font-bold text-slate-900">Checklist K3</h1>
             <p className="mt-1 text-sm text-slate-500">
-              Hasil inspeksi K3 yang tersimpan di Supabase.
+              Riwayat hasil inspeksi keselamatan laboratorium.
             </p>
           </div>
-          <Link
-            href="/checklists/new"
-            className="inline-flex min-h-11 w-full items-center justify-center gap-1 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 min-[420px]:w-auto"
-          >
-            <Plus className="h-4 w-4" /> Isi Checklist
-          </Link>
+          {canCreate && (
+            <Link
+              href="/checklists/new"
+              className="inline-flex min-h-11 w-full items-center justify-center gap-1 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 min-[420px]:w-auto"
+            >
+              <Plus className="h-4 w-4" /> Isi Checklist
+            </Link>
+          )}
         </div>
 
         <section className="rounded-2xl border border-white/80 bg-white/85 p-4 shadow-sm backdrop-blur-xl">
@@ -193,6 +225,26 @@ export default function ChecklistsPage() {
               );
             })}
           </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <label className="text-xs font-semibold text-slate-600">Aset
+              <select value={assetFilter} onChange={(event) => setAssetFilter(event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal">
+                <option value="semua">Semua aset</option>
+                {filterOptions.assets.map(([id, asset]) => asset && <option key={id} value={id ?? ""}>{asset.name} ({asset.code})</option>)}
+              </select>
+            </label>
+            <label className="text-xs font-semibold text-slate-600">Template
+              <select value={templateFilter} onChange={(event) => setTemplateFilter(event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal">
+                <option value="semua">Semua template</option>
+                {filterOptions.templates.map(([id, template]) => template && <option key={id} value={id ?? ""}>{template.title}</option>)}
+              </select>
+            </label>
+            <label className="text-xs font-semibold text-slate-600">Laboratorium
+              <select value={laboratoryFilter} onChange={(event) => setLaboratoryFilter(event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal">
+                <option value="semua">Semua laboratorium</option>
+                {filterOptions.laboratories.map(([id, laboratory]) => laboratory && <option key={id} value={id ?? ""}>{laboratory.name}</option>)}
+              </select>
+            </label>
+          </div>
         </section>
 
         {loading ? (
@@ -210,13 +262,13 @@ export default function ChecklistsPage() {
           </div>
         ) : (
           <>
-            <section className="space-y-3">
+            {canCreate && <section className="space-y-3">
               <div>
                 <h2 className="text-lg font-semibold text-slate-900">
                   Template Aktif
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  Template dan item dimuat langsung dari Supabase.
+                  Template dan item pemeriksaan yang tersedia.
                 </p>
               </div>
 
@@ -241,7 +293,7 @@ export default function ChecklistsPage() {
                             {template.title}
                           </h3>
                           <p className="mt-1 text-sm text-slate-500">
-                            {template.items.length} item pemeriksaan
+                            Versi {template.version} · {template.items.length} item pemeriksaan
                           </p>
                           <p className="mt-1 text-xs text-slate-400">
                             {template.items.filter((item) => item.isCritical).length}{" "}
@@ -253,7 +305,7 @@ export default function ChecklistsPage() {
                   ))}
                 </div>
               )}
-            </section>
+            </section>}
 
             <section className="space-y-3">
               <h2 className="text-lg font-semibold text-slate-900">
@@ -265,7 +317,7 @@ export default function ChecklistsPage() {
             <ClipboardCheck className="mx-auto mb-3 h-10 w-10 text-slate-300" />
             <p className="text-slate-500">
               {results.length === 0
-                ? "Belum ada hasil checklist di Supabase."
+                ? "Belum ada hasil checklist yang dapat ditampilkan."
                 : "Tidak ada checklist yang sesuai pencarian atau filter."}
             </p>
           </div>
@@ -320,6 +372,12 @@ export default function ChecklistsPage() {
                     {result.overallNote}
                   </p>
                 )}
+                <Link
+                  href={`/checklists/${result.id}`}
+                  className="mt-4 inline-flex min-h-10 w-full items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 sm:w-auto"
+                >
+                  Lihat Detail Hasil
+                </Link>
               </article>
             ))}
           </div>

@@ -10,7 +10,7 @@ export async function getReportEvidenceBucket(): Promise<{
     return {
       bucket: null,
       error:
-        "SUPABASE_STORAGE_BUCKET belum dikonfigurasi. Isi env tersebut dengan nama bucket report-evidence.",
+        "Layanan unggah foto sedang tidak tersedia.",
     };
   }
 

@@ -128,7 +128,7 @@ Codex tidak menjalankan migration ini secara otomatis.
 - Mahasiswa/dosen dapat membuat laporan dengan bukti foto.
 - Mahasiswa/dosen tidak dapat mengubah status atau menambah follow-up.
 - Teknisi, kepala laboratorium, dan admin melihat semua laporan.
-- Ketiga report manager dapat mengubah status dan menambah follow-up.
+- Teknisi pada laboratoriumnya dan admin dapat mengubah status serta menambah follow-up. Kepala laboratorium tetap dapat membaca laporan sesuai scope, tetapi view-only untuk mutation.
 - Signed URL bukti hanya berhasil untuk reporter atau report manager.
 - Upload selain JPG/JPEG/PNG/WebP atau path di luar kontrak ditolak.
 

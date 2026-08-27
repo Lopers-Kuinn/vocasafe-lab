@@ -1,12 +1,13 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   AlertCircle,
   ArrowLeft,
   CheckCircle2,
+  FileImage,
   Loader2,
   Send,
 } from "lucide-react";
@@ -17,6 +18,7 @@ import {
   fetchActiveChecklistTemplates,
   type DatabaseChecklistTemplate,
 } from "@/lib/checklists";
+import { uploadChecklistEvidence } from "@/lib/checklist-v2";
 import { calculateRiskScore } from "@/lib/risk-scoring";
 import type { ChecklistAnswer } from "@/types";
 
@@ -65,9 +67,13 @@ function ChecklistForm() {
   const [responses, setResponses] = useState<Record<string, AnswerState>>({});
   const [overallNote, setOverallNote] = useState("");
   const [hasRiskFinding, setHasRiskFinding] = useState(false);
-  const [severity, setSeverity] = useState(3);
-  const [probability, setProbability] = useState(3);
-  const [exposure, setExposure] = useState(3);
+  const [severity, setSeverity] = useState(0);
+  const [probability, setProbability] = useState(0);
+  const [exposure, setExposure] = useState(0);
+  const [evidenceFiles, setEvidenceFiles] = useState<Record<string, File | null>>({});
+  const [measurements, setMeasurements] = useState<Record<string, string>>({});
+  const [inspectorAttestation, setInspectorAttestation] = useState(false);
+  const startedAtRef = useRef(new Date().toISOString());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [createdResultId, setCreatedResultId] = useState("");
@@ -140,7 +146,8 @@ function ChecklistForm() {
     (response) => response.answer === "tidak",
   );
   const riskFindingActive = hasRiskFinding || hasNegativeAnswer;
-  const riskPreview = riskFindingActive
+  const riskFactorsComplete = severity > 0 && probability > 0 && exposure > 0;
+  const riskPreview = riskFindingActive && riskFactorsComplete
     ? calculateRiskScore({ severity, probability, exposure })
     : null;
 
@@ -150,6 +157,8 @@ function ChecklistForm() {
     ) ?? null;
     setActiveTemplate(nextTemplate);
     setResponses({});
+    setEvidenceFiles({});
+    setMeasurements({});
     setError("");
 
     if (
@@ -217,6 +226,27 @@ function ChecklistForm() {
       return;
     }
 
+    const criticalWithoutEvidence = checklistItems.some(
+      (item) =>
+        responses[item.id]?.answer === "tidak" &&
+        (item.isCritical || item.evidenceRequired) &&
+        !evidenceFiles[item.id],
+    );
+    if (criticalWithoutEvidence) {
+      setError("Foto bukti wajib untuk setiap temuan kritis.");
+      return;
+    }
+
+    if (riskFindingActive && !riskFactorsComplete) {
+      setError("Pilih severity, probability, dan exposure untuk temuan risiko.");
+      return;
+    }
+
+    if (!inspectorAttestation) {
+      setError("Konfirmasi pernyataan pemeriksa sebelum menyimpan checklist.");
+      return;
+    }
+
     setSubmitting(true);
     const result = await createChecklistResult({
       templateId: activeTemplate.id,
@@ -230,10 +260,32 @@ function ChecklistForm() {
         answer: responses[item.id].answer,
         note: responses[item.id].note,
       })),
+      startedAt: startedAtRef.current,
+      inspectorAttestation,
     });
 
-    if (result.error && result.resultSaved) {
-      setSubmissionWarning(result.error);
+    if (result.resultSaved && result.resultId) {
+      const evidenceErrors = await Promise.all(
+        checklistItems
+          .filter((item) => evidenceFiles[item.id])
+          .map(async (item) => {
+            const measurement = Number(measurements[item.id]);
+            return uploadChecklistEvidence(
+              result.resultId as string,
+              item.id,
+              evidenceFiles[item.id] as File,
+              Number.isFinite(measurement) && measurements[item.id] !== "" ? measurement : null,
+            );
+          }),
+      );
+      const failedEvidenceCount = evidenceErrors.filter((upload) => upload.error).length;
+      const warnings = [
+        result.error,
+        failedEvidenceCount > 0
+          ? `${failedEvidenceCount} bukti belum berhasil diunggah. Hasil checklist tetap tersimpan.`
+          : null,
+      ].filter(Boolean);
+      setSubmissionWarning(warnings.join(" "));
       setCreatedResultId(result.resultId ?? "saved");
       setSubmitting(false);
       return;
@@ -253,9 +305,13 @@ function ChecklistForm() {
     setResponses({});
     setOverallNote("");
     setHasRiskFinding(false);
-    setSeverity(3);
-    setProbability(3);
-    setExposure(3);
+    setSeverity(0);
+    setProbability(0);
+    setExposure(0);
+    setEvidenceFiles({});
+    setMeasurements({});
+    setInspectorAttestation(false);
+    startedAtRef.current = new Date().toISOString();
     setError("");
     setSubmissionWarning("");
     setCreatedResultId("");
@@ -272,7 +328,7 @@ function ChecklistForm() {
             </h1>
             <p className="mt-2 text-sm text-slate-500">
               Hasil {activeTemplate?.title} untuk {selectedAsset?.name} telah
-              disimpan ke Supabase.
+              dicatat sebagai hasil inspeksi.
             </p>
             {riskPreview && (
               <p className="mt-2 text-sm font-medium text-slate-700">
@@ -287,7 +343,7 @@ function ChecklistForm() {
                 {submissionWarning}
               </p>
             )}
-            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            <div className="mt-6 grid gap-3 sm:grid-cols-3">
               <button
                 type="button"
                 onClick={resetForm}
@@ -295,6 +351,12 @@ function ChecklistForm() {
               >
                 Isi Checklist Baru
               </button>
+              <Link
+                href={`/checklists/${createdResultId}`}
+                className="inline-flex min-h-11 items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+              >
+                Lihat Detail Hasil
+              </Link>
               <Link
                 href="/checklists"
                 className="inline-flex min-h-11 items-center justify-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
@@ -321,7 +383,7 @@ function ChecklistForm() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Isi Checklist K3</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Isi template aktif dan simpan hasil pemeriksaan ke Supabase.
+            Isi template aktif dan simpan hasil pemeriksaan.
           </p>
         </div>
 
@@ -339,7 +401,7 @@ function ChecklistForm() {
           </div>
         ) : templates.length === 0 ? (
           <div className="rounded-lg border border-slate-200 bg-white p-8 text-center text-slate-500">
-            Belum ada template checklist aktif di Supabase.
+            Belum ada template checklist aktif yang dapat digunakan.
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -366,6 +428,26 @@ function ChecklistForm() {
                   ))}
                 </select>
               </div>
+
+              {selectedAsset && (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="font-semibold text-slate-900">{selectedAsset.name} ({selectedAsset.code})</p>
+                      <p className="mt-1 text-xs text-slate-500">{selectedAsset.location ?? "Lokasi belum dicatat"}</p>
+                    </div>
+                    <span className="self-start rounded-full bg-white px-2.5 py-1 text-xs font-bold text-slate-700">
+                      {selectedAsset.operationalState.replaceAll("_", " ")}
+                    </span>
+                  </div>
+                  {selectedAsset.requiredCompetency && (
+                    <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                      Kompetensi pemeriksa yang diperlukan: <strong>{selectedAsset.requiredCompetency}</strong>.
+                      Pastikan pemeriksaan teknis dilakukan oleh personel yang kompeten dan berwenang.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div>
                 <label
@@ -396,22 +478,6 @@ function ChecklistForm() {
                 </p>
               )}
 
-              {process.env.NODE_ENV === "development" && (
-                <dl className="grid gap-1 rounded-md border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-600 sm:grid-cols-[9rem_1fr]">
-                  <dt>Template ID</dt>
-                  <dd className="break-all">
-                    {activeTemplate?.id ?? "Belum tersedia"}
-                  </dd>
-                  <dt>Asset ID</dt>
-                  <dd className="break-all">
-                    {selectedAssetId || "Belum dipilih"}
-                  </dd>
-                  <dt>Jumlah aset</dt>
-                  <dd>{assets.length}</dd>
-                  <dt>Jumlah item</dt>
-                  <dd>{checklistItems.length}</dd>
-                </dl>
-              )}
             </section>
 
             {activeTemplate && (
@@ -421,8 +487,13 @@ function ChecklistForm() {
                     {activeTemplate.title}
                   </h2>
                   <p className="mt-1 text-sm text-slate-500">
-                    {checklistItems.length} item pemeriksaan
+                    Versi {activeTemplate.version} · {checklistItems.length} item pemeriksaan
                   </p>
+                  {activeTemplate.regulatoryReference && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Acuan: {activeTemplate.regulatoryReference}
+                    </p>
+                  )}
                 </div>
 
                 {checklistItems.map((item, index) => {
@@ -494,6 +565,53 @@ function ChecklistForm() {
                         }
                         className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                       />
+
+                      {item.measurementType && (
+                        <label className="mt-3 block text-xs font-medium text-slate-600">
+                          Nilai pengukuran {item.measurementUnit ? `(${item.measurementUnit})` : ""}
+                          <input
+                            type="number"
+                            step="any"
+                            value={measurements[item.id] ?? ""}
+                            onChange={(event) =>
+                              setMeasurements((current) => ({
+                                ...current,
+                                [item.id]: event.target.value,
+                              }))
+                            }
+                            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                          />
+                        </label>
+                      )}
+
+                      {(response?.answer === "tidak" || item.evidenceRequired) && (
+                        <label className="mt-3 block text-xs font-medium text-slate-600">
+                          Foto bukti {(response?.answer === "tidak" && item.isCritical) || item.evidenceRequired ? "*" : "(opsional)"}
+                          <span className="mt-1 flex min-h-11 items-center gap-2 rounded-md border border-dashed border-slate-300 bg-white px-3 py-2 text-sm text-slate-600">
+                            <FileImage className="h-4 w-4 shrink-0" />
+                            <span className="min-w-0 truncate">
+                              {evidenceFiles[item.id]?.name ?? "Pilih JPG, PNG, atau WebP (maks. 5 MB)"}
+                            </span>
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            className="sr-only"
+                            onChange={(event) =>
+                              setEvidenceFiles((current) => ({
+                                ...current,
+                                [item.id]: event.target.files?.[0] ?? null,
+                              }))
+                            }
+                          />
+                        </label>
+                      )}
+
+                      {response?.answer === "tidak" && item.failureAction && (
+                        <p className="mt-3 rounded-md bg-red-100 p-2 text-xs font-medium text-red-800">
+                          Tindakan sementara: {item.failureAction}
+                        </p>
+                      )}
                     </fieldset>
                   );
                 })}
@@ -522,45 +640,45 @@ function ChecklistForm() {
                   <div className="grid gap-4 sm:grid-cols-3">
                     <div>
                       <label htmlFor="severity" className="mb-1 block text-sm font-medium text-slate-700">
-                        Severity (1-5): {severity}
+                        Severity (1-5)
                       </label>
-                      <input
+                      <select
                         id="severity"
-                        type="range"
-                        min={1}
-                        max={5}
                         value={severity}
                         onChange={(event) => setSeverity(Number(event.target.value))}
-                        className="w-full accent-emerald-600"
-                      />
+                        className="min-h-11 w-full rounded-md border border-slate-300 px-3 py-2"
+                      >
+                        <option value={0}>Pilih...</option>
+                        {[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value}</option>)}
+                      </select>
                     </div>
                     <div>
                       <label htmlFor="probability" className="mb-1 block text-sm font-medium text-slate-700">
-                        Probability (1-5): {probability}
+                        Probability (1-5)
                       </label>
-                      <input
+                      <select
                         id="probability"
-                        type="range"
-                        min={1}
-                        max={5}
                         value={probability}
                         onChange={(event) => setProbability(Number(event.target.value))}
-                        className="w-full accent-emerald-600"
-                      />
+                        className="min-h-11 w-full rounded-md border border-slate-300 px-3 py-2"
+                      >
+                        <option value={0}>Pilih...</option>
+                        {[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value}</option>)}
+                      </select>
                     </div>
                     <div>
                       <label htmlFor="exposure" className="mb-1 block text-sm font-medium text-slate-700">
-                        Exposure (1-5): {exposure}
+                        Exposure (1-5)
                       </label>
-                      <input
+                      <select
                         id="exposure"
-                        type="range"
-                        min={1}
-                        max={5}
                         value={exposure}
                         onChange={(event) => setExposure(Number(event.target.value))}
-                        className="w-full accent-emerald-600"
-                      />
+                        className="min-h-11 w-full rounded-md border border-slate-300 px-3 py-2"
+                      >
+                        <option value={0}>Pilih...</option>
+                        {[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value}</option>)}
+                      </select>
                     </div>
                   </div>
 
@@ -591,6 +709,19 @@ function ChecklistForm() {
                 </div>
               )}
             </section>
+
+            <label className="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
+              <input
+                type="checkbox"
+                checked={inspectorAttestation}
+                onChange={(event) => setInspectorAttestation(event.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-emerald-700"
+              />
+              <span>
+                Saya menyatakan pemeriksaan dilakukan sesuai kondisi aktual, catatan temuan lengkap,
+                dan tindakan sementara telah dilakukan bila kondisi tidak aman.
+              </span>
+            </label>
 
             <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
               <label

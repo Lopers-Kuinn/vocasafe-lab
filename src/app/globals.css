@@ -65,43 +65,37 @@ textarea {
   --scroll-drift-side-reverse: 0px;
   --cursor-x: 50vw;
   --cursor-y: 50vh;
-  --cursor-shift-x: 0px;
-  --cursor-shift-x-reverse: 0px;
-  --cursor-shift-y: 0px;
-  --cursor-shift-y-reverse: 0px;
   contain: strict;
 }
 
 .scroll-ambient-grid {
   transform: translate3d(0, var(--scroll-drift-slow), 0);
-  will-change: transform;
 }
 
 .scroll-ambient-orb {
   transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: transform;
 }
 
 .scroll-ambient-orb-left {
   transform: translate3d(
-    calc(var(--scroll-drift-side) + var(--cursor-shift-x)),
-    calc(var(--scroll-drift-medium) + var(--cursor-shift-y)),
+    var(--scroll-drift-side),
+    var(--scroll-drift-medium),
     0
   );
 }
 
 .scroll-ambient-orb-right {
   transform: translate3d(
-    calc(var(--scroll-drift-side-reverse) + var(--cursor-shift-x-reverse)),
-    calc(var(--scroll-drift-fast) + var(--cursor-shift-y-reverse)),
+    var(--scroll-drift-side-reverse),
+    var(--scroll-drift-fast),
     0
   );
 }
 
 .scroll-ambient-orb-center {
   transform: translate3d(
-    calc(var(--scroll-drift-side) + var(--cursor-shift-x-reverse)),
-    calc(var(--scroll-drift-slow) + var(--cursor-shift-y)),
+    var(--scroll-drift-side),
+    var(--scroll-drift-slow),
     0
   );
 }
@@ -113,24 +107,20 @@ textarea {
   width: 11rem;
   height: 11rem;
   opacity: 0;
-  filter: blur(5px);
   transform: translate3d(var(--cursor-x), var(--cursor-y), 0) translate3d(-50%, -50%, 0) scale(1.15);
   transition:
     opacity 720ms ease,
-    filter 760ms ease,
     transform 150ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.cursor-ambient.is-pointer-active {
+  opacity: 0.92;
+  transform: translate3d(var(--cursor-x), var(--cursor-y), 0) translate3d(-50%, -50%, 0) scale(1);
   will-change: opacity, transform;
 }
 
-.scroll-ambient.is-pointer-active .cursor-ambient {
-  opacity: 0.92;
-  filter: blur(0);
-  transform: translate3d(var(--cursor-x), var(--cursor-y), 0) translate3d(-50%, -50%, 0) scale(1);
-}
-
-.scroll-ambient.is-pointer-idle .cursor-ambient {
+.cursor-ambient.is-pointer-idle {
   opacity: 0;
-  filter: blur(7px);
   transform: translate3d(var(--cursor-x), var(--cursor-y), 0) translate3d(-50%, -50%, 0) scale(1.48);
 }
 
@@ -145,12 +135,12 @@ textarea {
     transform 820ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.is-pointer-active .cursor-ambient-glow {
+.cursor-ambient.is-pointer-active .cursor-ambient-glow {
   opacity: 1;
   transform: scale(1);
 }
 
-.is-pointer-idle .cursor-ambient-glow {
+.cursor-ambient.is-pointer-idle .cursor-ambient-glow {
   opacity: 0;
   transform: scale(2.1);
 }
@@ -175,7 +165,7 @@ textarea {
   animation-play-state: paused;
 }
 
-.is-pointer-active .cursor-orbit {
+.cursor-ambient.is-pointer-active .cursor-orbit {
   animation-play-state: running;
 }
 
@@ -221,59 +211,59 @@ textarea {
   box-shadow: 0 0 14px rgba(6, 182, 212, 0.4);
 }
 
-.is-pointer-active .cursor-particle {
+.cursor-ambient.is-pointer-active .cursor-particle {
   opacity: 0.9;
 }
 
-.is-pointer-active .cursor-particle-a {
+.cursor-ambient.is-pointer-active .cursor-particle-a {
   transform: translate3d(-2.6rem, -1.5rem, 0) scale(1);
 }
 
-.is-pointer-active .cursor-particle-b {
+.cursor-ambient.is-pointer-active .cursor-particle-b {
   transform: translate3d(2.2rem, -2rem, 0) scale(1);
 }
 
-.is-pointer-active .cursor-particle-c {
+.cursor-ambient.is-pointer-active .cursor-particle-c {
   transform: translate3d(3rem, 1.1rem, 0) scale(1);
 }
 
-.is-pointer-active .cursor-particle-d {
+.cursor-ambient.is-pointer-active .cursor-particle-d {
   transform: translate3d(-2.1rem, 2.4rem, 0) scale(1);
 }
 
-.is-pointer-active .cursor-particle-e {
+.cursor-ambient.is-pointer-active .cursor-particle-e {
   transform: translate3d(0.4rem, 3.1rem, 0) scale(1);
 }
 
-.is-pointer-active .cursor-particle-f {
+.cursor-ambient.is-pointer-active .cursor-particle-f {
   transform: translate3d(-3.4rem, 0.6rem, 0) scale(1);
 }
 
-.is-pointer-idle .cursor-particle {
+.cursor-ambient.is-pointer-idle .cursor-particle {
   opacity: 0;
 }
 
-.is-pointer-idle .cursor-particle-a {
+.cursor-ambient.is-pointer-idle .cursor-particle-a {
   transform: translate3d(-6.8rem, -5.4rem, 0) scale(0.1);
 }
 
-.is-pointer-idle .cursor-particle-b {
+.cursor-ambient.is-pointer-idle .cursor-particle-b {
   transform: translate3d(6.4rem, -6.2rem, 0) scale(0.1);
 }
 
-.is-pointer-idle .cursor-particle-c {
+.cursor-ambient.is-pointer-idle .cursor-particle-c {
   transform: translate3d(7.2rem, 4.8rem, 0) scale(0.1);
 }
 
-.is-pointer-idle .cursor-particle-d {
+.cursor-ambient.is-pointer-idle .cursor-particle-d {
   transform: translate3d(-6.3rem, 6.7rem, 0) scale(0.1);
 }
 
-.is-pointer-idle .cursor-particle-e {
+.cursor-ambient.is-pointer-idle .cursor-particle-e {
   transform: translate3d(1.6rem, 7.8rem, 0) scale(0.1);
 }
 
-.is-pointer-idle .cursor-particle-f {
+.cursor-ambient.is-pointer-idle .cursor-particle-f {
   transform: translate3d(-7.7rem, 1.9rem, 0) scale(0.1);
 }
 
@@ -421,6 +411,17 @@ textarea {
 
 .page-enter tbody tr:nth-child(n + 5) {
   animation-delay: 180ms;
+}
+
+.page-enter tbody tr:nth-child(n + 9) {
+  animation: none;
+}
+
+@supports (content-visibility: auto) {
+  .page-enter > :where(section, article) {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 320px;
+  }
 }
 
 .motion-bar-x {

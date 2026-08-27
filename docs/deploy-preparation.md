@@ -18,6 +18,9 @@ GEMINI_API_KEY=
 DEEPSEEK_API_KEY=
 OPENROUTER_API_KEY=
 OPENROUTER_MODEL=tencent/hy3:free
+NEXT_PUBLIC_DEMO_MODE_ENABLED=false
+DEMO_MODE_ENABLED=false
+DEMO_ACCOUNT_PASSWORD=
 ```
 
 Catatan AI:
@@ -35,6 +38,16 @@ Catatan service role:
 - Key ini tidak boleh dipakai di Client Component atau dikirim ke browser.
 - Jangan commit nilai secret ke repository.
 
+Catatan akun demo:
+
+- Mode demo production tidak aktif secara default.
+- Aktifkan hanya pada project Supabase khusus demo dengan data sintetis.
+- `DEMO_ACCOUNT_PASSWORD` wajib server-only dan harus sama dengan password lima
+  akun Auth demo yang sudah diprovisikan.
+- Mengaktifkan tombol Admin memberi pengunjung hak admin nyata pada database
+  demo. Jangan aktifkan pada database operasional.
+- Panduan lengkap tersedia di `docs/demo-accounts.md`.
+
 ## Supabase Requirement
 
 Pastikan sebelum deploy:
@@ -43,7 +56,12 @@ Pastikan sebelum deploy:
 - Seed `001_seed_initial_data.sql` sudah dijalankan.
 - Migration `002_d4_rls_hardening.sql` sudah dijalankan.
 - Migration `004_ai_endpoint_rate_limit.sql` sudah direview dan dijalankan manual.
+- Migration `005_multi_lab_rls_hardening.sql` sampai
+  `008_asset_management_and_activity.sql` sudah dijalankan berurutan.
+- Migration `009_advanced_hazard_reporting.sql` sampai
+  `013_audit_k3_v2.sql` sudah direview dan dijalankan berurutan.
 - Bucket private `report-evidence` sudah ada.
+- Bucket private `asset-documents` dan `checklist-evidence` sudah ada.
 - Storage policy untuk upload/read signed URL foto bukti aktif.
 - Admin user manual sudah ada di Supabase Auth dan `user_profiles`.
 - RLS aktif dan sudah diuji untuk role utama.
@@ -70,6 +88,8 @@ Jalankan setelah Vercel deploy:
 16. Pastikan profil inactive mendapat `403` dari endpoint AI.
 17. Sebagai user aktif, kirim 11 request AI dalam 60 detik dan pastikan request ke-11 mendapat `429` dengan header `Retry-After`.
 18. Pastikan rate limit user lain terpisah dan kembali tersedia setelah window 60 detik.
+19. Jika mode demo diaktifkan, uji kelima tombol role dan pastikan pembatasan
+    route/RLS tetap sesuai.
 
 Rate limiter AI memakai tabel Supabase dan RPC atomik dengan batas 10 request per 60 detik per user. Fitur ini tidak memerlukan environment variable, service role, atau dependency tambahan. Provider yang gagal tetap menggunakan fallback rule-based setelah request lolos autentikasi dan rate limit.
 
@@ -77,9 +97,9 @@ Rate limiter AI memakai tabel Supabase dan RPC atomik dengan batas 10 request pe
 
 - Build lokal masih menampilkan warning multiple lockfiles karena Next.js mendeteksi `C:\Users\Paulina\package-lock.json` dan `C:\Users\Paulina\Documents\vocasafe-lab\package-lock.json`. Warning ini tidak menggagalkan build.
 
-## Known Issue
+## Catatan Lint
 
-- `npm run lint` masih gagal pada rule `react-hooks/set-state-in-effect` di `src/components/AppShell.tsx`. Ini issue lama dan tidak diubah pada D4-15.
+- Pemeriksaan terakhir `npm run lint` lulus. Riwayat D4 pernah mencatat issue `react-hooks/set-state-in-effect` di `src/components/AppShell.tsx`; jalankan lint ulang setelah perubahan besar.
 
 ## Release Gate
 

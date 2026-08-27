@@ -277,7 +277,7 @@ export function buildFallbackRiskSuggestion(
     suggestedRiskCategory: risk.category,
     recommendation: `${risk.recommendation} Tinjau ulang konteks laporan sebelum menetapkan tindak lanjut final.`,
     shortRationale:
-      "Fallback mempertahankan nilai risiko yang sedang dipilih pengguna dan menghitung skor dengan aturan sistem.",
+      "Sistem mempertahankan nilai risiko yang sedang dipilih pengguna dan menghitung skor sesuai aturan yang berlaku.",
   };
 }
 

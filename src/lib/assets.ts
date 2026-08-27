@@ -4,6 +4,12 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 export type DatabaseAssetKind = "alat" | "fasilitas";
 export type DatabaseAssetStatus = "layak" | "perlu_dicek" | "tidak_layak";
+export type AssetOperationalState =
+  | "aktif"
+  | "penggunaan_dibatasi"
+  | "dalam_perbaikan"
+  | "dikarantina"
+  | "dipensiunkan";
 
 export interface LaboratorySummary {
   id: string;
@@ -37,6 +43,19 @@ export interface DatabaseAsset {
   qrPayload: string | null;
   lastInspectionAt: string | null;
   nextInspectionAt: string | null;
+  manufacturer: string | null;
+  model: string | null;
+  serialNumber: string | null;
+  manufactureYear: number | null;
+  acquiredAt: string | null;
+  technicalSpecs: Record<string, string>;
+  energySources: string[];
+  requiredCompetency: string | null;
+  regulatoryReference: string | null;
+  inspectionIntervalDays: number;
+  operationalState: AssetOperationalState;
+  isolationReason: string | null;
+  isolatedAt: string | null;
   laboratory: LaboratorySummary | null;
   sop: SopSummary | null;
 }
@@ -62,6 +81,12 @@ export type AssetActivityType =
   | "servis"
   | "perbaikan"
   | "catatan"
+  | "status_operasional"
+  | "sertifikat"
+  | "work_order"
+  | "kontrol_keselamatan"
+  | "dokumen"
+  | "review_inspeksi"
   | "laporan"
   | "checklist";
 
@@ -136,6 +161,19 @@ interface AssetRow {
   qr_payload: string | null;
   last_inspection_at: string | null;
   next_inspection_at: string | null;
+  manufacturer: string | null;
+  model: string | null;
+  serial_number: string | null;
+  manufacture_year: number | null;
+  acquired_at: string | null;
+  technical_specs: unknown;
+  energy_sources: unknown;
+  required_competency: string | null;
+  regulatory_reference: string | null;
+  inspection_interval_days: number;
+  operational_state: AssetOperationalState;
+  isolation_reason: string | null;
+  isolated_at: string | null;
   laboratory: LaboratoryRow | LaboratoryRow[] | null;
   sop: SopRow | SopRow[] | null;
 }
@@ -189,6 +227,19 @@ const ASSET_SELECT = `
   qr_payload,
   last_inspection_at,
   next_inspection_at,
+  manufacturer,
+  model,
+  serial_number,
+  manufacture_year,
+  acquired_at,
+  technical_specs,
+  energy_sources,
+  required_competency,
+  regulatory_reference,
+  inspection_interval_days,
+  operational_state,
+  isolation_reason,
+  isolated_at,
   laboratory:laboratories(id,code,name,department,location),
   sop:sops(id,laboratory_id,title,version,last_updated_at,required_ppe,steps)
 `;
@@ -201,6 +252,15 @@ function firstRelation<T>(value: T | T[] | null): T | null {
 function stringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === "string");
+}
+
+function stringRecord(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
+  );
 }
 
 function mapAsset(row: AssetRow): DatabaseAsset {
@@ -221,6 +281,19 @@ function mapAsset(row: AssetRow): DatabaseAsset {
     qrPayload: row.qr_payload,
     lastInspectionAt: row.last_inspection_at,
     nextInspectionAt: row.next_inspection_at,
+    manufacturer: row.manufacturer,
+    model: row.model,
+    serialNumber: row.serial_number,
+    manufactureYear: row.manufacture_year,
+    acquiredAt: row.acquired_at,
+    technicalSpecs: stringRecord(row.technical_specs),
+    energySources: stringArray(row.energy_sources),
+    requiredCompetency: row.required_competency,
+    regulatoryReference: row.regulatory_reference,
+    inspectionIntervalDays: row.inspection_interval_days,
+    operationalState: row.operational_state,
+    isolationReason: row.isolation_reason,
+    isolatedAt: row.isolated_at,
     laboratory: laboratory
       ? {
           id: laboratory.id,
@@ -246,11 +319,11 @@ function mapAsset(row: AssetRow): DatabaseAsset {
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
-  return "Data asset tidak dapat dimuat dari Supabase.";
+  return "Data aset belum dapat dimuat. Silakan coba kembali.";
 }
 
 export function getAssetQrPayload(asset: DatabaseAsset): string {
-  return asset.qrPayload || `vocasafe://assets/${asset.code}`;
+  return `/scan?asset=${encodeURIComponent(asset.id)}`;
 }
 
 export async function fetchAssets(): Promise<{
@@ -384,7 +457,7 @@ export async function saveAssetRecord(
     if (error) return { assetId: null, error: error.message };
     return {
       assetId: typeof data === "string" ? data : null,
-      error: typeof data === "string" ? null : "ID aset dari database tidak valid.",
+      error: typeof data === "string" ? null : "Data aset yang diterima tidak valid.",
     };
   } catch (error) {
     return { assetId: null, error: errorMessage(error) };
@@ -495,7 +568,10 @@ export async function addAssetActivity(
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function normalizeLookup(value: string): string {
+function normalizeLookup(value: string): {
+  lookup: string;
+  error: string | null;
+} {
   let decoded = value;
   try {
     decoded = decodeURIComponent(value);
@@ -505,7 +581,34 @@ function normalizeLookup(value: string): string {
 
   const trimmed = decoded.trim();
   const qrMatch = trimmed.match(/^vocasafe:\/\/assets\/([^/?#]+)\/?$/i);
-  return qrMatch?.[1] ?? trimmed;
+  if (qrMatch?.[1]) return { lookup: qrMatch[1], error: null };
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      const url = new URL(trimmed);
+      if (typeof window !== "undefined" && url.origin !== window.location.origin) {
+        return {
+          lookup: "",
+          error: "QR bukan berasal dari domain resmi VocaSafe Lab.",
+        };
+      }
+
+      const queryAsset = url.pathname === "/scan" ? url.searchParams.get("asset") : null;
+      const assetPath = url.pathname.match(/^\/assets\/([^/?#]+)\/?$/i)?.[1] ?? null;
+      const scanPath = url.pathname.match(/^\/scan\/([^/?#]+)\/?$/i)?.[1] ?? null;
+      const identifier = queryAsset || assetPath || scanPath;
+
+      if (!identifier) {
+        return { lookup: "", error: "Format URL QR VocaSafe Lab tidak valid." };
+      }
+
+      return { lookup: decodeURIComponent(identifier), error: null };
+    } catch {
+      return { lookup: "", error: "Format URL QR tidak valid." };
+    }
+  }
+
+  return { lookup: trimmed, error: null };
 }
 
 async function queryAsset(
@@ -532,12 +635,15 @@ export async function fetchAssetByLookup(value: string): Promise<{
   try {
     const original = value.trim();
     const normalized = normalizeLookup(original);
+    if (normalized.error) {
+      return { asset: null, error: normalized.error };
+    }
 
-    const byCode = await queryAsset("code", normalized);
+    const byCode = await queryAsset("code", normalized.lookup);
     if (byCode.asset || byCode.error) return byCode;
 
-    if (UUID_PATTERN.test(normalized)) {
-      const byId = await queryAsset("id", normalized);
+    if (UUID_PATTERN.test(normalized.lookup)) {
+      const byId = await queryAsset("id", normalized.lookup);
       if (byId.asset || byId.error) return byId;
     }
 

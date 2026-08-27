@@ -17,7 +17,7 @@ const ACCESS_MATRIX: Record<RouteKey, UserRole[]> = {
   "/assets": ["mahasiswa", "dosen", "teknisi", "kepala_lab", "admin"],
   "/reports": ["mahasiswa", "dosen", "teknisi", "kepala_lab", "admin"],
   "/reports/new": ["mahasiswa", "dosen", "teknisi", "admin"],
-  "/checklists": ["dosen", "teknisi", "admin"],
+  "/checklists": ["dosen", "teknisi", "kepala_lab", "admin"],
   "/checklists/new": ["dosen", "teknisi", "admin"],
   "/audit": ["teknisi", "kepala_lab", "admin"],
   "/admin": ["admin"],
@@ -27,6 +27,9 @@ function normalizeRoute(route: string): RouteKey | null {
   if (route === "/reports/new") return "/reports/new";
   if (route.startsWith("/reports/")) return "/reports";
   if (route === "/checklists/new") return "/checklists/new";
+  if (route.startsWith("/checklists/")) return "/checklists";
+  if (route.startsWith("/audit/")) return "/audit";
+  if (route.startsWith("/scan/")) return "/scan";
   if (route.startsWith("/assets/")) return "/assets";
   if (route === "/admin" || route.startsWith("/admin/")) return "/admin";
   if (Object.prototype.hasOwnProperty.call(ACCESS_MATRIX, route)) {
