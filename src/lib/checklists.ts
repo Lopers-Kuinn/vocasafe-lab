@@ -25,6 +25,9 @@ interface ChecklistTemplateRow {
   title: string;
   asset_kind: AssetKind | null;
   is_active: boolean;
+  version: number;
+  effective_from: string;
+  regulatory_reference: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -35,6 +38,14 @@ interface ChecklistItemRow {
   label: string;
   is_critical: boolean;
   guidance: string | null;
+  evidence_required: boolean;
+  measurement_type: string | null;
+  measurement_unit: string | null;
+  minimum_value: number | null;
+  maximum_value: number | null;
+  legal_reference: string | null;
+  control_hierarchy: string | null;
+  failure_action: string | null;
   sort_order: number;
   created_at: string;
 }
@@ -57,6 +68,11 @@ interface ChecklistInspectorRow {
   role: UserRole;
 }
 
+interface ChecklistLaboratoryRow {
+  id: string;
+  name: string;
+}
+
 interface ChecklistResultRow {
   id: string;
   template_id: string | null;
@@ -77,6 +93,7 @@ interface ChecklistResultRow {
   template: ChecklistTemplateSummaryRow | ChecklistTemplateSummaryRow[] | null;
   asset: ChecklistAssetRow | ChecklistAssetRow[] | null;
   inspector: ChecklistInspectorRow | ChecklistInspectorRow[] | null;
+  laboratory: ChecklistLaboratoryRow | ChecklistLaboratoryRow[] | null;
 }
 
 interface ProfileRoleRow {
@@ -90,6 +107,14 @@ export interface DatabaseChecklistItem {
   label: string;
   isCritical: boolean;
   guidance: string | null;
+  evidenceRequired: boolean;
+  measurementType: string | null;
+  measurementUnit: string | null;
+  minimumValue: number | null;
+  maximumValue: number | null;
+  legalReference: string | null;
+  controlHierarchy: string | null;
+  failureAction: string | null;
   sortOrder: number;
   createdAt: string;
 }
@@ -100,6 +125,9 @@ export interface DatabaseChecklistTemplate {
   title: string;
   assetKind: AssetKind | null;
   isActive: boolean;
+  version: number;
+  effectiveFrom: string;
+  regulatoryReference: string | null;
   createdAt: string;
   updatedAt: string;
   items: DatabaseChecklistItem[];
@@ -134,6 +162,7 @@ export interface DatabaseChecklistResult {
     fullName: string;
     role: UserRole;
   } | null;
+  laboratory: { id: string; name: string } | null;
 }
 
 export interface ChecklistSubmissionAnswer {
@@ -150,6 +179,8 @@ export interface CreateChecklistResultInput {
   hasRiskFinding: boolean;
   riskInput: RiskScoringInput;
   answers: ChecklistSubmissionAnswer[];
+  startedAt: string;
+  inspectorAttestation: boolean;
 }
 
 function firstRelation<T>(value: T | T[] | null): T | null {
@@ -159,7 +190,7 @@ function firstRelation<T>(value: T | T[] | null): T | null {
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
-  return "Data checklist tidak dapat diproses dari Supabase.";
+  return "Data checklist belum dapat diproses. Silakan coba kembali.";
 }
 
 function mapItem(row: ChecklistItemRow): DatabaseChecklistItem {
@@ -169,6 +200,14 @@ function mapItem(row: ChecklistItemRow): DatabaseChecklistItem {
     label: row.label,
     isCritical: row.is_critical,
     guidance: row.guidance,
+    evidenceRequired: row.evidence_required,
+    measurementType: row.measurement_type,
+    measurementUnit: row.measurement_unit,
+    minimumValue: row.minimum_value,
+    maximumValue: row.maximum_value,
+    legalReference: row.legal_reference,
+    controlHierarchy: row.control_hierarchy,
+    failureAction: row.failure_action,
     sortOrder: row.sort_order,
     createdAt: row.created_at,
   };
@@ -178,6 +217,7 @@ function mapResult(row: ChecklistResultRow): DatabaseChecklistResult {
   const template = firstRelation(row.template);
   const asset = firstRelation(row.asset);
   const inspector = firstRelation(row.inspector);
+  const laboratory = firstRelation(row.laboratory);
 
   return {
     id: row.id,
@@ -212,6 +252,7 @@ function mapResult(row: ChecklistResultRow): DatabaseChecklistResult {
           role: inspector.role,
         }
       : null,
+    laboratory: laboratory ? { id: laboratory.id, name: laboratory.name } : null,
   };
 }
 
@@ -224,7 +265,7 @@ export async function fetchActiveChecklistTemplates(): Promise<{
     const { data: templateData, error: templateError } = await supabase
       .from("checklist_templates")
       .select(
-        "id,laboratory_id,title,asset_kind,is_active,created_at,updated_at",
+        "id,laboratory_id,title,asset_kind,is_active,version,effective_from,regulatory_reference,created_at,updated_at",
       )
       .eq("is_active", true)
       .order("created_at", { ascending: true });
@@ -236,7 +277,7 @@ export async function fetchActiveChecklistTemplates(): Promise<{
 
     const { data: itemData, error: itemError } = await supabase
       .from("checklist_items")
-      .select("id,template_id,label,is_critical,guidance,sort_order,created_at")
+      .select("id,template_id,label,is_critical,guidance,evidence_required,measurement_type,measurement_unit,minimum_value,maximum_value,legal_reference,control_hierarchy,failure_action,sort_order,created_at")
       .in(
         "template_id",
         templateRows.map((template) => template.id),
@@ -253,6 +294,9 @@ export async function fetchActiveChecklistTemplates(): Promise<{
         title: template.title,
         assetKind: template.asset_kind,
         isActive: template.is_active,
+        version: template.version,
+        effectiveFrom: template.effective_from,
+        regulatoryReference: template.regulatory_reference,
         createdAt: template.created_at,
         updatedAt: template.updated_at,
         items: items.filter((item) => item.templateId === template.id),
@@ -291,7 +335,8 @@ export async function fetchChecklistResults(): Promise<{
         updated_at,
         template:checklist_templates(id,title),
         asset:assets(id,code,name,location),
-        inspector:user_profiles(id,full_name,role)
+        inspector:user_profiles(id,full_name,role),
+        laboratory:laboratories(id,name)
       `)
       .order("completed_at", { ascending: false });
 
@@ -350,6 +395,14 @@ export async function createChecklistResult(
       resultId: null,
       resultSaved: false,
       error: "Item checklist belum tersedia.",
+    };
+  }
+
+  if (!input.inspectorAttestation) {
+    return {
+      resultId: null,
+      resultSaved: false,
+      error: "Pernyataan pemeriksa wajib disetujui.",
     };
   }
 
@@ -475,7 +528,22 @@ export async function createChecklistResult(
       return { resultId: null, resultSaved: false, error: "ID hasil checklist tidak valid." };
     }
 
-    return { resultId, resultSaved: true, error: null };
+    const { error: finalizeError } = await supabase.rpc(
+      "finalize_checklist_result_v2",
+      {
+        target_result_id: resultId,
+        inspection_started_at: input.startedAt,
+        inspector_confirmed: input.inspectorAttestation,
+      },
+    );
+
+    return {
+      resultId,
+      resultSaved: true,
+      error: finalizeError
+        ? "Checklist tersimpan, tetapi konteks auditnya belum dapat dilengkapi."
+        : null,
+    };
   } catch (error) {
     return { resultId: null, resultSaved: false, error: errorMessage(error) };
   }

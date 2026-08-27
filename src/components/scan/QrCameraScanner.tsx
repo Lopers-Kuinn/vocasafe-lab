@@ -1,7 +1,15 @@
 "use client";
 
 import type { CameraDevice, Html5Qrcode } from "html5-qrcode";
-import { Camera, CameraOff, Loader2, ScanLine } from "lucide-react";
+import {
+  Camera,
+  CameraOff,
+  Flashlight,
+  Loader2,
+  RefreshCw,
+  ScanLine,
+  Volume2,
+} from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
 export interface CameraLookupResult {
@@ -207,11 +215,38 @@ function cameraFailure(
   };
 }
 
-function selectCamera(cameras: CameraDevice[]): CameraDevice {
+function selectCamera(
+  cameras: CameraDevice[],
+  preferredCameraId?: string,
+): CameraDevice {
   return (
+    cameras.find((camera) => camera.id === preferredCameraId) ??
     cameras.find((camera) => /(back|rear|environment)/i.test(camera.label)) ??
     cameras[0]
   );
+}
+
+function playScanFeedback(): void {
+  if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+    navigator.vibrate(120);
+  }
+
+  try {
+    const AudioContextClass = window.AudioContext;
+    const context = new AudioContextClass();
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.frequency.value = 880;
+    gain.gain.setValueAtTime(0.08, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.12);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start();
+    oscillator.stop(context.currentTime + 0.12);
+    oscillator.addEventListener("ended", () => void context.close(), { once: true });
+  } catch {
+    // Audio feedback is optional and may be blocked by browser policy.
+  }
 }
 
 export default function QrCameraScanner({ onDecoded }: QrCameraScannerProps) {
@@ -220,6 +255,7 @@ export default function QrCameraScanner({ onDecoded }: QrCameraScannerProps) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const startPromiseRef = useRef<Promise<null> | null>(null);
   const preflightStreamRef = useRef<MediaStream | null>(null);
+  const cameraTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(false);
   const operationRef = useRef(0);
   const processingRef = useRef(false);
@@ -227,8 +263,12 @@ export default function QrCameraScanner({ onDecoded }: QrCameraScannerProps) {
   const [message, setMessage] = useState(
     "Tekan tombol mulai untuk meminta akses kamera.",
   );
-  const [debugInfo, setDebugInfo] =
+  const [, setDebugInfo] =
     useState<CameraDebugInfo>(INITIAL_DEBUG_INFO);
+  const [detectedCameras, setDetectedCameras] = useState<CameraDevice[]>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState("");
+  const [torchAvailable, setTorchAvailable] = useState(false);
+  const [torchEnabled, setTorchEnabled] = useState(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -242,6 +282,8 @@ export default function QrCameraScanner({ onDecoded }: QrCameraScannerProps) {
       scannerRef.current = null;
       startPromiseRef.current = null;
       preflightStreamRef.current = null;
+      if (cameraTimeoutRef.current) clearTimeout(cameraTimeoutRef.current);
+      cameraTimeoutRef.current = null;
 
       stopMediaStream(preflightStream);
 
@@ -258,6 +300,9 @@ export default function QrCameraScanner({ onDecoded }: QrCameraScannerProps) {
     if (processingRef.current) return;
 
     processingRef.current = true;
+    if (cameraTimeoutRef.current) clearTimeout(cameraTimeoutRef.current);
+    cameraTimeoutRef.current = null;
+    playScanFeedback();
     operationRef.current += 1;
     scannerRef.current = null;
 
@@ -401,7 +446,9 @@ export default function QrCameraScanner({ onDecoded }: QrCameraScannerProps) {
       return;
     }
 
-    const selectedCamera = selectCamera(cameras);
+    const selectedCamera = selectCamera(cameras, selectedCameraId);
+    setDetectedCameras(cameras);
+    setSelectedCameraId(selectedCamera.id);
     setDebugInfo({
       detectedCount: cameras.length,
       selectedCameraId: selectedCamera.id,
@@ -454,6 +501,24 @@ export default function QrCameraScanner({ onDecoded }: QrCameraScannerProps) {
 
       setStatus("active");
       setMessage("Arahkan kamera ke QR Code aset VocaSafe Lab.");
+      cameraTimeoutRef.current = setTimeout(() => {
+        void stopCamera().then(() => {
+          if (mountedRef.current) {
+            setMessage(
+              "Kamera dihentikan otomatis setelah 90 detik. Tekan Coba Lagi untuk melanjutkan.",
+            );
+          }
+        });
+      }, 90_000);
+
+      try {
+        const capabilities = scanner.getRunningTrackCapabilities() as MediaTrackCapabilities & {
+          torch?: boolean;
+        };
+        setTorchAvailable(Boolean(capabilities.torch));
+      } catch {
+        setTorchAvailable(false);
+      }
 
       if (pendingDecodedText) {
         void handleDecoded(scanner, pendingDecodedText);
@@ -475,6 +540,8 @@ export default function QrCameraScanner({ onDecoded }: QrCameraScannerProps) {
   }
 
   async function stopCamera(): Promise<void> {
+    if (cameraTimeoutRef.current) clearTimeout(cameraTimeoutRef.current);
+    cameraTimeoutRef.current = null;
     operationRef.current += 1;
     processingRef.current = false;
     const scanner = scannerRef.current;
@@ -493,6 +560,25 @@ export default function QrCameraScanner({ onDecoded }: QrCameraScannerProps) {
 
     setStatus("idle");
     setMessage("Kamera dihentikan. Input manual tetap dapat digunakan.");
+    setTorchAvailable(false);
+    setTorchEnabled(false);
+  }
+
+  async function toggleTorch(): Promise<void> {
+    const scanner = scannerRef.current;
+    if (!scanner?.isScanning || !torchAvailable) return;
+
+    const nextValue = !torchEnabled;
+    try {
+      await scanner.applyVideoConstraints({
+        advanced: [{ torch: nextValue } as MediaTrackConstraintSet],
+      });
+      setTorchEnabled(nextValue);
+      setMessage(nextValue ? "Lampu kamera dinyalakan." : "Lampu kamera dimatikan.");
+    } catch (error) {
+      console.error("[QrCameraScanner] torch failed", error);
+      setMessage("Lampu kamera tidak dapat diubah pada perangkat ini.");
+    }
   }
 
   const cameraRunning = status === "requesting" || status === "active";
@@ -526,7 +612,7 @@ export default function QrCameraScanner({ onDecoded }: QrCameraScannerProps) {
         {!cameraRunning && (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-950 px-6 text-center text-slate-300">
             <ScanLine className="h-12 w-12 text-emerald-400" />
-            <p className="text-sm">Preview kamera akan tampil di area ini.</p>
+            <p className="text-sm">Pratinjau kamera akan tampil di area ini.</p>
           </div>
         )}
 
@@ -550,26 +636,32 @@ export default function QrCameraScanner({ onDecoded }: QrCameraScannerProps) {
         {message}
       </p>
 
-      {process.env.NODE_ENV === "development" && (
-        <div className="mt-3 rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-          <p className="font-semibold text-slate-700">Debug kamera (development)</p>
-          <dl className="mt-2 grid gap-1 sm:grid-cols-[10rem_1fr]">
-            <dt>Jumlah kamera</dt>
-            <dd>{debugInfo.detectedCount ?? "Belum diperiksa"}</dd>
-            <dt>Camera ID</dt>
-            <dd className="break-all">
-              {debugInfo.selectedCameraId || "Belum dipilih"}
-            </dd>
-            <dt>Label</dt>
-            <dd>{debugInfo.selectedCameraLabel || "Belum tersedia"}</dd>
-            <dt>Error terakhir</dt>
-            <dd className="break-words">
-              {debugInfo.lastErrorName
-                ? `${debugInfo.lastErrorName}: ${debugInfo.lastErrorMessage}`
-                : "Tidak ada"}
-            </dd>
-          </dl>
-        </div>
+      <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
+        <Volume2 className="h-4 w-4 text-emerald-700" />
+        Scan berhasil memberi umpan balik bunyi atau getaran jika didukung perangkat.
+      </div>
+
+      {detectedCameras.length > 1 && (
+        <label className="mt-4 block text-sm font-medium text-slate-700">
+          Pilih kamera
+          <select
+            value={selectedCameraId}
+            onChange={(event) => setSelectedCameraId(event.target.value)}
+            disabled={cameraRunning}
+            className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 disabled:bg-slate-100"
+          >
+            {detectedCameras.map((camera, index) => (
+              <option key={camera.id} value={camera.id}>
+                {camera.label || `Kamera ${index + 1}`}
+              </option>
+            ))}
+          </select>
+          {cameraRunning && (
+            <span className="mt-1 block text-xs text-slate-500">
+              Hentikan kamera sebelum mengganti perangkat.
+            </span>
+          )}
+        </label>
       )}
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -581,10 +673,14 @@ export default function QrCameraScanner({ onDecoded }: QrCameraScannerProps) {
         >
           {status === "requesting" ? (
             <Loader2 className="h-4 w-4 animate-spin" />
+          ) : status === "error" || status === "denied" || status === "unsupported" ? (
+            <RefreshCw className="h-4 w-4" />
           ) : (
             <Camera className="h-4 w-4" />
           )}
-          Mulai Scan Kamera
+          {status === "error" || status === "denied" || status === "unsupported"
+            ? "Coba Lagi"
+            : "Mulai Scan Kamera"}
         </button>
         <button
           type="button"
@@ -594,6 +690,16 @@ export default function QrCameraScanner({ onDecoded }: QrCameraScannerProps) {
         >
           <CameraOff className="h-4 w-4" /> Hentikan Kamera
         </button>
+        {cameraRunning && torchAvailable && (
+          <button
+            type="button"
+            onClick={() => void toggleTorch()}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-900 transition-colors hover:bg-amber-100 sm:col-span-2"
+          >
+            <Flashlight className="h-4 w-4" />
+            {torchEnabled ? "Matikan Lampu" : "Nyalakan Lampu"}
+          </button>
+        )}
       </div>
     </section>
   );

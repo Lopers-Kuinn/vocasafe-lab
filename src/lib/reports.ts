@@ -4,7 +4,9 @@ import { calculateRiskScore } from "@/lib/risk-scoring";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { canEditReportStatus } from "@/lib/role-access";
 import type {
+  HazardCategory,
   ReportStatus,
+  ReportType,
   RiskLevel,
   RiskScoringInput,
   UserRole,
@@ -16,6 +18,27 @@ export const REPORT_EVIDENCE_TYPES = [
   "image/png",
   "image/webp",
 ] as const;
+
+export const REPORT_TYPE_LABELS: Record<ReportType, string> = {
+  kondisi_tidak_aman: "Kondisi tidak aman",
+  near_miss: "Nyaris celaka",
+  kecelakaan_cedera: "Kecelakaan / cedera",
+  kerusakan_aset: "Kerusakan alat",
+  kebakaran_ledakan: "Kebakaran / ledakan",
+  tumpahan_bahan: "Tumpahan bahan",
+  keluhan_kesehatan: "Keluhan kesehatan",
+};
+
+export const HAZARD_CATEGORY_LABELS: Record<HazardCategory, string> = {
+  listrik: "Listrik",
+  mekanik: "Mekanik",
+  kebakaran: "Kebakaran",
+  bahan_kimia: "Bahan kimia",
+  ergonomi: "Ergonomi",
+  fasilitas_k3: "Fasilitas K3",
+  lingkungan: "Lingkungan",
+  lainnya: "Lainnya",
+};
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -29,6 +52,17 @@ const REPORT_SELECT = `
   title,
   description,
   location,
+  report_type,
+  hazard_category,
+  occurred_at,
+  activity_at_time,
+  hazard_active,
+  immediate_action,
+  pic_notified,
+  people_affected,
+  injury_details,
+  witness_details,
+  is_confidential,
   status,
   severity,
   probability,
@@ -65,6 +99,17 @@ interface ReportRow {
   title: string;
   description: string;
   location: string | null;
+  report_type: ReportType;
+  hazard_category: HazardCategory;
+  occurred_at: string | null;
+  activity_at_time: string | null;
+  hazard_active: boolean;
+  immediate_action: string | null;
+  pic_notified: boolean;
+  people_affected: boolean;
+  injury_details: string | null;
+  witness_details: string | null;
+  is_confidential: boolean;
   status: ReportStatus;
   severity: number;
   probability: number;
@@ -143,6 +188,17 @@ export interface DatabaseReport {
   title: string;
   description: string;
   location: string;
+  reportType: ReportType;
+  hazardCategory: HazardCategory;
+  occurredAt: string;
+  activityAtTime: string;
+  hazardActive: boolean;
+  immediateAction: string;
+  picNotified: boolean;
+  peopleAffected: boolean;
+  injuryDetails: string;
+  witnessDetails: string;
+  isConfidential: boolean;
   status: ReportStatus;
   severity: number;
   probability: number;
@@ -159,11 +215,22 @@ export interface DatabaseReport {
 }
 
 export interface CreateReportInput {
-  assetId: string;
-  laboratoryId: string | null;
+  assetId: string | null;
+  laboratoryId: string;
   title: string;
   description: string;
   location: string;
+  reportType: ReportType;
+  hazardCategory: HazardCategory;
+  occurredAt: string;
+  activityAtTime: string;
+  hazardActive: boolean;
+  immediateAction: string;
+  picNotified: boolean;
+  peopleAffected: boolean;
+  injuryDetails: string;
+  witnessDetails: string;
+  isConfidential: boolean;
   riskInput: RiskScoringInput;
 }
 
@@ -190,6 +257,17 @@ function mapReport(row: ReportRow): DatabaseReport {
     title: row.title,
     description: row.description,
     location: row.location ?? asset?.location ?? "Lokasi tidak tersedia",
+    reportType: row.report_type,
+    hazardCategory: row.hazard_category,
+    occurredAt: row.occurred_at ?? row.reported_at ?? row.created_at,
+    activityAtTime: row.activity_at_time ?? "",
+    hazardActive: row.hazard_active,
+    immediateAction: row.immediate_action ?? "",
+    picNotified: row.pic_notified,
+    peopleAffected: row.people_affected,
+    injuryDetails: row.injury_details ?? "",
+    witnessDetails: row.witness_details ?? "",
+    isConfidential: row.is_confidential,
     status: row.status,
     severity: row.severity,
     probability: row.probability,
@@ -221,7 +299,7 @@ function mapReport(row: ReportRow): DatabaseReport {
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
-  return "Data laporan tidak dapat diproses dari Supabase.";
+  return "Data laporan belum dapat diproses. Silakan coba kembali.";
 }
 
 function generateReportNumber(): string {
@@ -527,6 +605,19 @@ export async function createReport(input: CreateReportInput): Promise<{
         title: input.title.trim(),
         description: input.description.trim(),
         location: input.location.trim(),
+        report_type: input.reportType,
+        hazard_category: input.hazardCategory,
+        occurred_at: input.occurredAt,
+        activity_at_time: input.activityAtTime.trim() || null,
+        hazard_active: input.hazardActive,
+        immediate_action: input.immediateAction.trim() || null,
+        pic_notified: input.picNotified,
+        people_affected: input.peopleAffected,
+        injury_details: input.peopleAffected
+          ? input.injuryDetails.trim()
+          : null,
+        witness_details: input.witnessDetails.trim() || null,
+        is_confidential: input.isConfidential,
         status: "baru",
         severity: input.riskInput.severity,
         probability: input.riskInput.probability,
@@ -563,7 +654,7 @@ export async function uploadReportEvidence(input: {
 
   try {
     const supabase = createSupabaseBrowserClient();
-    const path = `reports/${input.reportId}/${Date.now()}-${safeFileName(input.file.name)}`;
+    const path = `reports/${input.reportId}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}-${safeFileName(input.file.name)}`;
     const { error: uploadError } = await supabase.storage
       .from(input.bucket)
       .upload(path, input.file, {

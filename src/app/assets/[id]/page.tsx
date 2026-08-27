@@ -17,6 +17,7 @@ import AppShell from "@/components/AppShell";
 import AssetActivitySection from "@/components/assets/AssetActivitySection";
 import AssetFormModal from "@/components/assets/AssetFormModal";
 import AssetQrActions from "@/components/assets/AssetQrActions";
+import AssetSafetySection from "@/components/assets/AssetSafetySection";
 import {
   fetchAssetContact,
   fetchAssetByLookup,
@@ -173,7 +174,7 @@ export default function AssetDetailPage() {
           <AlertTriangle className="mx-auto h-10 w-10 text-amber-500" />
           <h1 className="mt-3 text-xl font-bold text-slate-900">Aset tidak ditemukan</h1>
           <p className="mt-2 text-sm text-slate-500">
-            Kode atau ID aset tidak tersedia di Supabase.
+            Aset tidak ditemukan atau Anda tidak memiliki akses.
           </p>
           <Link
             href="/assets"
@@ -205,7 +206,7 @@ export default function AssetDetailPage() {
           <ArrowLeft className="h-4 w-4" /> Kembali
         </Link>
 
-        <div className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+        <div id="sop-digital" className="min-w-0 scroll-mt-24 overflow-hidden rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -311,6 +312,12 @@ export default function AssetDetailPage() {
           </div>
         </div>
 
+        <AssetSafetySection
+          asset={asset}
+          canManage={canManage}
+          onAssetUpdated={retryLoadAsset}
+        />
+
         <div className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
           <div className="mb-4 flex items-center gap-2">
             <FileText className="h-5 w-5 text-emerald-600" />
@@ -356,7 +363,12 @@ export default function AssetDetailPage() {
           )}
         </div>
 
-        <AssetQrActions asset={asset} payload={qrPayload} />
+        <AssetQrActions
+          asset={asset}
+          payload={qrPayload}
+          contact={contact}
+          canManage={canManage}
+        />
 
         <AssetActivitySection assetId={asset.id} canManage={canManage} />
       </div>

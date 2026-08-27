@@ -28,7 +28,7 @@ export default function HomePage() {
           </span>
           <span className="hidden min-w-0 min-[350px]:block">
             <span className="block text-base font-bold tracking-[-0.03em] text-[#102c23]">VocaSafe Lab</span>
-            <span className="block text-[9px] font-bold uppercase tracking-[0.2em] text-emerald-700/60">Safety Intelligence</span>
+            <span className="block text-[9px] font-bold uppercase tracking-[0.2em] text-emerald-700/60">Keselamatan Terpadu</span>
           </span>
         </Link>
 
@@ -95,8 +95,8 @@ export default function HomePage() {
                   <ShieldCheck className="h-5 w-5" />
                 </span>
                 <div>
-                  <p className="text-sm font-bold text-slate-900">Monitoring K3</p>
-                  <p className="text-[10px] text-slate-500">Laboratorium Teknik</p>
+                  <p className="text-sm font-bold text-slate-900">Pemantauan K3</p>
+                  <p className="text-[10px] text-slate-500">4 laboratorium terhubung</p>
                 </div>
               </div>
               <span className="rounded-full bg-emerald-100 px-3 py-1 text-[10px] font-bold text-emerald-700">Aktif</span>
@@ -105,15 +105,15 @@ export default function HomePage() {
             <div className="mt-4 grid grid-cols-2 gap-3">
               <div className="rounded-3xl bg-[#102c23] p-4 text-white shadow-[0_18px_35px_rgba(16,44,35,0.18)]">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-200">Aset layak</p>
-                <p className="mt-3 text-4xl font-semibold tracking-[-0.05em]">92%</p>
+                <p className="mt-3 text-4xl font-semibold tracking-[-0.05em]">75%</p>
                 <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10">
-                  <div className="h-full w-[92%] rounded-full bg-emerald-300" />
+                  <div className="h-full w-[75%] rounded-full bg-emerald-300" />
                 </div>
               </div>
               <div className="rounded-3xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-4">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-700">Audit aktif</p>
-                <p className="mt-3 text-4xl font-semibold tracking-[-0.05em] text-emerald-950">08</p>
-                <p className="mt-3 text-[10px] text-slate-500">2 perlu ditinjau hari ini</p>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-emerald-700">Arsip audit</p>
+                <p className="mt-3 text-4xl font-semibold tracking-[-0.05em] text-emerald-950">04</p>
+                <p className="mt-3 text-[10px] text-slate-500">Tersedia untuk peninjauan berizin</p>
               </div>
             </div>
 
@@ -121,12 +121,12 @@ export default function HomePage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-bold text-slate-900">Sinyal keselamatan</p>
-                  <p className="mt-0.5 text-[10px] text-slate-500">Distribusi risiko terkini</p>
+                  <p className="mt-0.5 text-[10px] text-slate-500">Sinyal laporan 6 bulan terakhir</p>
                 </div>
                 <BarChart3 className="h-4 w-4 text-emerald-700" />
               </div>
               <div className="mt-4 flex h-24 items-end gap-2">
-                {[42, 68, 34, 82, 52, 72, 46, 90, 62].map((height, index) => (
+                {[100, 100, 100, 100, 100, 83].map((height, index) => (
                   <div
                     key={`${height}-${index}`}
                     className="motion-bar-y flex-1 rounded-t-lg bg-gradient-to-t from-emerald-600 to-emerald-200"
@@ -142,17 +142,17 @@ export default function HomePage() {
               <CheckCircle2 className="h-4 w-4" />
               <span className="text-[10px] font-bold uppercase tracking-[0.12em]">Inspeksi selesai</span>
             </div>
-            <p className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-slate-900">24 item</p>
-            <p className="mt-1 text-[10px] text-slate-500">Terverifikasi hari ini</p>
+            <p className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-slate-900">96 hasil</p>
+            <p className="mt-1 text-[10px] text-slate-500">Hasil inspeksi tercatat</p>
           </div>
 
           <div className="premium-surface absolute bottom-[5%] right-0 w-[50%] min-w-0 rounded-3xl p-3.5 shadow-[0_24px_55px_rgba(70,48,112,0.14)] [transform:rotate(2deg)] sm:w-48 sm:p-4 sm:[transform:rotate(3deg)]">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-violet-700">Risiko kritis</span>
+              <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-violet-700">Temuan kritis</span>
               <span className="h-2 w-2 rounded-full bg-red-500 shadow-[0_0_0_5px_rgba(239,68,68,0.1)]" />
             </div>
-            <p className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-slate-900">01</p>
-            <p className="mt-1 text-[10px] leading-4 text-slate-500">Prioritas penanganan teknisi</p>
+            <p className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-slate-900">10</p>
+            <p className="mt-1 text-[10px] leading-4 text-slate-500">Laporan + checklist perlu prioritas</p>
           </div>
         </section>
       </main>

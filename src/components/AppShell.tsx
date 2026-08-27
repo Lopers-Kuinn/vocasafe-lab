@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import {
   clearCachedCurrentUser,
+  getCurrentUser,
   getCurrentUserProfile,
   getRoleLabel,
   signOut,
@@ -64,7 +65,7 @@ function Brand({ compact = false }: { compact?: boolean }) {
             VocaSafe Lab
           </span>
           <span className="block truncate text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700/60">
-            Safety Intelligence
+            Keselamatan Terpadu
           </span>
         </span>
       )}
@@ -84,11 +85,11 @@ function userInitials(fullName: string) {
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [user, setUser] = useState<AppUser | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<AppUser | null>(() => getCurrentUser());
+  const hadCachedProfile = useRef(user !== null);
+  const [loading, setLoading] = useState(user === null);
   const [authError, setAuthError] = useState("");
   const [logoutError, setLogoutError] = useState("");
-  const [accessDenied, setAccessDenied] = useState(false);
   const [inactivitySeconds, setInactivitySeconds] = useState(0);
   const inactivityLogoutStarted = useRef(false);
   const logoutReason = useRef<"inactive" | null>(null);
@@ -113,13 +114,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     router.replace("/login?reason=inactive");
   }, [router]);
 
-  const loadProfile = useCallback(async () => {
-    setLoading(true);
-    const { user: profile, error } = await getCurrentUserProfile();
+  const loadProfile = useCallback(async (
+    forceRefresh = false,
+    background = false,
+  ) => {
+    if (!background) setLoading(true);
+    const { user: profile, error } = await getCurrentUserProfile({ forceRefresh });
 
     if (!profile || error) {
+      if (background) return;
       setUser(null);
-      setAuthError(error ?? "Sesi Supabase tidak tersedia. Silakan login kembali.");
+      setAuthError(error ?? "Sesi Anda telah berakhir. Silakan masuk kembali.");
       setLoading(false);
       router.replace("/login");
       return;
@@ -127,12 +132,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
     setAuthError("");
     setUser(profile);
-    setAccessDenied(!canAccessRoute(profile.role, pathname));
     setLoading(false);
-  }, [pathname, router]);
+  }, [router]);
 
   useEffect(() => {
-    const timer = setTimeout(() => void loadProfile(), 0);
+    const hasCachedProfile = hadCachedProfile.current;
+    const timer = setTimeout(
+      () => void loadProfile(hasCachedProfile, hasCachedProfile),
+      0,
+    );
     return () => clearTimeout(timer);
   }, [loadProfile]);
 
@@ -144,13 +152,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       const {
         data: { subscription },
       } = supabase.auth.onAuthStateChange((event, session) => {
-        if (event === "INITIAL_SESSION") return;
+        if (event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED") return;
 
         if (event === "SIGNED_OUT" || !session) {
           clearCachedCurrentUser();
           clearSessionActivity();
           setUser(null);
-          setAccessDenied(false);
           setLoading(false);
           router.replace(logoutReason.current === "inactive" ? "/login?reason=inactive" : "/login");
           return;
@@ -158,7 +165,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         if (refreshTimer) clearTimeout(refreshTimer);
         refreshTimer = setTimeout(() => {
-          void loadProfile();
+          void loadProfile(true, true);
         }, 0);
       });
 
@@ -170,7 +177,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       const message =
         error instanceof Error
           ? error.message
-          : "Supabase belum dikonfigurasi. Periksa environment aplikasi.";
+          : "Layanan sedang tidak tersedia. Silakan coba kembali.";
       queueMicrotask(() => setAuthError(message));
     }
   }, [loadProfile, router]);
@@ -267,6 +274,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     lastActivityWrite.current = now;
     setInactivitySeconds(0);
   }
+
+  const accessDenied = user ? !canAccessRoute(user.role, pathname) : false;
 
   if (loading) {
     return (
@@ -411,13 +420,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               })}
             </nav>
 
-            <div className="mt-auto rounded-2xl border border-emerald-100 bg-emerald-50/70 p-3">
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-700">Status sistem</p>
-              <div className="mt-2 flex items-center gap-2 text-xs font-medium text-emerald-950">
-                <span className="status-pulse h-2 w-2 rounded-full bg-emerald-500" />
-                Terhubung ke Supabase
-              </div>
-            </div>
           </div>
         </aside>
 

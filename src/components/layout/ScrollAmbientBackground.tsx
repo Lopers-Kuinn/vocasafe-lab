@@ -4,10 +4,12 @@ import { useEffect, useRef } from "react";
 
 export default function ScrollAmbientBackground() {
   const layerRef = useRef<HTMLDivElement>(null);
+  const cursorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const layer = layerRef.current;
-    if (!layer) return;
+    const cursor = cursorRef.current;
+    if (!layer || !cursor) return;
 
     const reduceMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
@@ -20,6 +22,7 @@ export default function ScrollAmbientBackground() {
     let idleTimer: ReturnType<typeof setTimeout> | null = null;
     let pointerX = window.innerWidth / 2;
     let pointerY = window.innerHeight / 2;
+    let lastPointerMoveAt = 0;
 
     const updateMotion = () => {
       const scrollY = Math.min(window.scrollY, 2400);
@@ -37,29 +40,25 @@ export default function ScrollAmbientBackground() {
     };
 
     const setPointerIdle = () => {
-      layer.classList.remove("is-pointer-active");
-      layer.classList.add("is-pointer-idle");
-      layer.style.setProperty("--cursor-shift-x", "0px");
-      layer.style.setProperty("--cursor-shift-x-reverse", "0px");
-      layer.style.setProperty("--cursor-shift-y", "0px");
-      layer.style.setProperty("--cursor-shift-y-reverse", "0px");
+      cursor.classList.remove("is-pointer-active");
+      cursor.classList.add("is-pointer-idle");
       idleTimer = null;
     };
 
-    const updatePointerMotion = () => {
-      const normalizedX = pointerX / window.innerWidth - 0.5;
-      const normalizedY = pointerY / window.innerHeight - 0.5;
-      const shiftX = normalizedX * 34;
-      const shiftY = normalizedY * 26;
+    const checkPointerIdle = () => {
+      const remaining = 480 - (performance.now() - lastPointerMoveAt);
+      if (remaining > 0) {
+        idleTimer = setTimeout(checkPointerIdle, remaining);
+        return;
+      }
+      setPointerIdle();
+    };
 
-      layer.style.setProperty("--cursor-x", `${pointerX}px`);
-      layer.style.setProperty("--cursor-y", `${pointerY}px`);
-      layer.style.setProperty("--cursor-shift-x", `${shiftX}px`);
-      layer.style.setProperty("--cursor-shift-x-reverse", `${shiftX * -1}px`);
-      layer.style.setProperty("--cursor-shift-y", `${shiftY}px`);
-      layer.style.setProperty("--cursor-shift-y-reverse", `${shiftY * -1}px`);
-      layer.classList.remove("is-pointer-idle");
-      layer.classList.add("is-pointer-active");
+    const updatePointerMotion = () => {
+      cursor.style.setProperty("--cursor-x", `${pointerX}px`);
+      cursor.style.setProperty("--cursor-y", `${pointerY}px`);
+      cursor.classList.remove("is-pointer-idle");
+      cursor.classList.add("is-pointer-active");
       pointerFrameId = null;
     };
 
@@ -68,13 +67,15 @@ export default function ScrollAmbientBackground() {
 
       pointerX = event.clientX;
       pointerY = event.clientY;
+      lastPointerMoveAt = performance.now();
 
       if (pointerFrameId === null) {
         pointerFrameId = window.requestAnimationFrame(updatePointerMotion);
       }
 
-      if (idleTimer) clearTimeout(idleTimer);
-      idleTimer = setTimeout(setPointerIdle, 480);
+      if (idleTimer === null) {
+        idleTimer = setTimeout(checkPointerIdle, 480);
+      }
     };
 
     updateMotion();
@@ -100,13 +101,13 @@ export default function ScrollAmbientBackground() {
     <div
       ref={layerRef}
       aria-hidden="true"
-      className="scroll-ambient is-pointer-idle pointer-events-none fixed inset-0 z-0 overflow-hidden"
+      className="scroll-ambient pointer-events-none fixed inset-0 z-0 overflow-hidden"
     >
       <div className="scroll-ambient-grid ambient-grid absolute -inset-24 opacity-55" />
       <div className="scroll-ambient-orb scroll-ambient-orb-left absolute -left-32 top-24 h-80 w-80 rounded-full bg-emerald-200/30 blur-3xl" />
       <div className="scroll-ambient-orb scroll-ambient-orb-right absolute -right-36 -top-20 h-96 w-96 rounded-full bg-violet-200/25 blur-3xl" />
       <div className="scroll-ambient-orb scroll-ambient-orb-center absolute left-[36%] top-[58%] h-72 w-72 rounded-full bg-cyan-100/25 blur-3xl" />
-      <div className="cursor-ambient">
+      <div ref={cursorRef} className="cursor-ambient is-pointer-idle">
         <span className="cursor-ambient-glow" />
         <span className="cursor-orbit cursor-orbit-primary">
           <span className="cursor-particle cursor-particle-a" />

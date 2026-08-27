@@ -5,6 +5,10 @@ import {
   fetchChecklistResults,
   type DatabaseChecklistResult,
 } from "@/lib/checklists";
+import {
+  fetchAssetComplianceCounts,
+  type AssetComplianceCounts,
+} from "@/lib/asset-safety";
 import { fetchReports, type DatabaseReport } from "@/lib/reports";
 import type { ReportStatus, RiskLevel } from "@/types";
 
@@ -21,6 +25,13 @@ export interface SupabaseSummary {
   openReports: number;
   latestReports: DatabaseReport[];
   latestChecklistResults: DatabaseChecklistResult[];
+  compliance: AssetComplianceCounts;
+  restrictedAssets: DatabaseAsset[];
+  overdueInspections: DatabaseAsset[];
+  inspectionsDueSoon: DatabaseAsset[];
+  activeHazards: DatabaseReport[];
+  activeHighOrCriticalReports: DatabaseReport[];
+  updatedAt: string;
 }
 
 export interface SupabaseSummaryResult {
@@ -47,16 +58,18 @@ function emptyRiskSummary(): Record<RiskLevel, number> {
 }
 
 export async function fetchSupabaseSummary(): Promise<SupabaseSummaryResult> {
-  const [assetResult, reportResult, checklistResult] = await Promise.all([
+  const [assetResult, reportResult, checklistResult, complianceResult] = await Promise.all([
     fetchAssets(),
     fetchReports(),
     fetchChecklistResults(),
+    fetchAssetComplianceCounts(),
   ]);
 
   const errors = [
-    assetResult.error ? `Aset: ${assetResult.error}` : null,
-    reportResult.error ? `Laporan: ${reportResult.error}` : null,
-    checklistResult.error ? `Checklist: ${checklistResult.error}` : null,
+    assetResult.error ? "Data aset belum dapat dimuat." : null,
+    reportResult.error ? "Data laporan belum dapat dimuat." : null,
+    checklistResult.error ? "Data checklist belum dapat dimuat." : null,
+    complianceResult.error ? "Data kepatuhan aset belum dapat dimuat." : null,
   ].filter((error): error is string => Boolean(error));
 
   const assetStatus = emptyAssetStatus();
@@ -79,6 +92,35 @@ export async function fetchSupabaseSummary(): Promise<SupabaseSummaryResult> {
     }
   }
 
+  const now = Date.now();
+  const dueSoonLimit = now + 30 * 86_400_000;
+  const restrictedAssets = assetResult.assets
+    .filter((asset) => asset.operationalState !== "aktif" || asset.status === "tidak_layak")
+    .sort((left, right) => {
+      const leftPriority = left.status === "tidak_layak" || left.operationalState === "dikarantina" ? 0 : 1;
+      const rightPriority = right.status === "tidak_layak" || right.operationalState === "dikarantina" ? 0 : 1;
+      return leftPriority - rightPriority || left.code.localeCompare(right.code);
+    });
+  const overdueInspections = assetResult.assets.filter((asset) => {
+    if (!asset.nextInspectionAt || asset.operationalState === "dipensiunkan") return false;
+    const dueAt = new Date(asset.nextInspectionAt).getTime();
+    return !Number.isNaN(dueAt) && dueAt < now;
+  });
+  const inspectionsDueSoon = assetResult.assets.filter((asset) => {
+    if (!asset.nextInspectionAt || asset.operationalState === "dipensiunkan") return false;
+    const dueAt = new Date(asset.nextInspectionAt).getTime();
+    return !Number.isNaN(dueAt) && dueAt >= now && dueAt <= dueSoonLimit;
+  });
+  const activeHazards = reportResult.reports.filter(
+    (report) => report.hazardActive && !["selesai", "ditolak"].includes(report.status),
+  );
+  const activeHighOrCriticalReports = activeHazards
+    .filter((report) => report.riskCategory === "tinggi" || report.riskCategory === "kritis")
+    .sort((left, right) => {
+      const riskDelta = (right.riskCategory === "kritis" ? 1 : 0) - (left.riskCategory === "kritis" ? 1 : 0);
+      return riskDelta || new Date(left.reportedAt).getTime() - new Date(right.reportedAt).getTime();
+    });
+
   return {
     summary: {
       assets: assetResult.assets,
@@ -97,6 +139,13 @@ export async function fetchSupabaseSummary(): Promise<SupabaseSummaryResult> {
         reportStatus.dalam_penanganan,
       latestReports: reportResult.reports.slice(0, 5),
       latestChecklistResults: checklistResult.results.slice(0, 5),
+      compliance: complianceResult.counts,
+      restrictedAssets,
+      overdueInspections,
+      inspectionsDueSoon,
+      activeHazards,
+      activeHighOrCriticalReports,
+      updatedAt: new Date().toISOString(),
     },
     errors,
   };

@@ -105,7 +105,7 @@ const EMPTY_ADMIN_DATA: AdminData = {
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
-  return "Data admin tidak dapat dimuat dari Supabase.";
+  return "Data administrasi belum dapat dimuat. Silakan coba kembali.";
 }
 
 export async function fetchAdminData(): Promise<AdminDataResult> {
@@ -222,7 +222,7 @@ function adminUpdateError(error: { code?: string; message: string }): string {
     normalized.includes("row-level security") ||
     normalized.includes("permission denied")
   ) {
-    return "Aksi ditolak oleh kebijakan akses database.";
+    return "Anda tidak memiliki izin untuk melakukan tindakan ini.";
   }
   return error.message;
 }
@@ -241,7 +241,7 @@ export async function updateUserProfileAccess(input: {
       return { error: profileError ?? "Sesi pengguna tidak ditemukan." };
     }
     if (user.role !== "admin") {
-      return { error: "Aksi ditolak oleh kebijakan akses database." };
+      return { error: "Anda tidak memiliki izin untuk melakukan tindakan ini." };
     }
     if (user.id === input.profileId) {
       return { error: "Tidak dapat mengubah role/status akun sendiri." };
@@ -260,7 +260,7 @@ export async function updateUserProfileAccess(input: {
       .maybeSingle();
 
     if (error) return { error: adminUpdateError(error) };
-    if (!data) return { error: "Aksi ditolak oleh kebijakan akses database." };
+    if (!data) return { error: "Anda tidak memiliki izin untuk melakukan tindakan ini." };
     return { error: null };
   } catch (error) {
     return { error: errorMessage(error) };

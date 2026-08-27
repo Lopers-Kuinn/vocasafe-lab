@@ -30,10 +30,10 @@ VocaSafe Lab v1.0.0 adalah prototype web app responsif untuk audit K3 dan manaje
   - 21-50 sedang
   - 51-80 tinggi
   - 81-125 kritis
-- Daftar laporan gabungan dummy data dan localStorage
+- Daftar laporan dari Supabase dengan scope RLS pengguna
 - Detail laporan dengan riwayat status
 - Panel tindak lanjut laporan untuk teknisi/admin
-- Checklist K3 dengan penyimpanan localStorage
+- Checklist K3 tersimpan di Supabase
 - Risk finding pada checklist dengan severity/probability/exposure
 - Audit report
 - Export CSV dengan nama `vocasafe-audit-report.csv`
@@ -50,7 +50,7 @@ VocaSafe Lab v1.0.0 adalah prototype web app responsif untuk audit K3 dan manaje
 
 ### Dashboard
 
-- Dashboard membaca gabungan `dummyReports` + localStorage `vocasafe_reports` melalui `getAllReports()`.
+- Dashboard membaca ringkasan dan laporan terbaru dari Supabase sesuai scope laboratorium pengguna.
 - Laporan berstatus `dalam_penanganan` dihitung sebagai belum selesai.
 - Status `selesai` dan `ditolak` tidak dihitung sebagai belum selesai.
 
@@ -75,23 +75,23 @@ VocaSafe Lab v1.0.0 adalah prototype web app responsif untuk audit K3 dan manaje
   - `score`
   - `category`
 
-### LocalStorage Migration
+### Legacy LocalStorage Migration
 
-- Laporan localStorage lama dapat dibaca dan dinormalisasi saat runtime:
+- Helper localStorage lama tetap tersedia sebagai artefak kompatibilitas, tetapi bukan sumber utama route D4. Jika dibaca oleh tooling legacy, normalisasi yang berlaku adalah:
   - `dilaporkan` menjadi `baru`
   - `ditindaklanjuti` menjadi `dalam_penanganan`
   - `likelihood` menjadi `probability`
   - `riskResult.level` menjadi `riskResult.category`
   - `exposure` fallback ke 1 bila data lama belum memilikinya
 
-## Batasan Prototype
+## Status dan Batasan Prototype
 
-- Belum memakai Supabase atau database production.
-- Belum memakai API AI sungguhan.
-- Belum memakai kamera QR sungguhan.
-- Belum memakai upload server/storage.
-- Belum memakai library PDF eksternal.
-- Data demo tersimpan pada dummy data dan localStorage browser.
+- Route D4 sudah memakai Supabase sebagai database production-like, Auth, RLS, dan Storage evidence.
+- Provider AI production bersifat opsional dengan fallback rule-based.
+- QR scanner kamera tersedia jika permission/perangkat mendukung; input manual tetap menjadi fallback.
+- Evidence memakai bucket Supabase private dan signed URL.
+- Print audit memakai `window.print()` tanpa library PDF eksternal.
+- Dummy data dan localStorage hanya artefak legacy; data route D4 tersimpan di Supabase.
 
 ## Validasi Rilis
 
@@ -120,5 +120,5 @@ Build terakhir menghasilkan route utama:
 ## Catatan Deploy
 
 - Pastikan tidak ada data sensitif di repository.
-- Karena prototype memakai localStorage, data demo dapat berbeda antar browser/perangkat.
-- Untuk reset data demo lokal, localStorage browser dapat dibersihkan manual.
+- Data route D4 mengikuti database dan RLS Supabase, sehingga hasil mengikuti user/laboratorium yang sedang login.
+- Jangan menghapus localStorage secara manual sebagai langkah reset database production.

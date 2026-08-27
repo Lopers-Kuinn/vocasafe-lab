@@ -13,9 +13,33 @@ interface UserProfileRow {
 }
 
 let cachedCurrentUser: AppUser | null = null;
+let cachedCurrentUserAt = 0;
+let currentUserRequest: Promise<{
+  user: AppUser | null;
+  error: string | null;
+}> | null = null;
+let currentUserRequestGeneration = 0;
+const PROFILE_CACHE_TTL_MS = 5 * 60_000;
+const AUTH_VALIDATION_TIMEOUT_MS = 5_000;
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | null> {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  const timeoutResult = new Promise<null>((resolve) => {
+    timeout = setTimeout(() => resolve(null), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutResult]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
 
 export function clearCachedCurrentUser(): void {
+  currentUserRequestGeneration += 1;
   cachedCurrentUser = null;
+  cachedCurrentUserAt = 0;
+  currentUserRequest = null;
 }
 
 function mapUserProfile(row: UserProfileRow): AppUser {
@@ -31,19 +55,23 @@ function mapUserProfile(row: UserProfileRow): AppUser {
 
 function getAuthErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
-  return "Supabase belum dikonfigurasi. Isi .env.local dengan NEXT_PUBLIC_SUPABASE_URL dan NEXT_PUBLIC_SUPABASE_ANON_KEY.";
+  return "Layanan autentikasi sedang tidak tersedia. Silakan coba kembali.";
 }
 
 export async function signInWithEmailPassword(email: string, password: string) {
   try {
+    clearCachedCurrentUser();
     const supabase = createSupabaseBrowserClient();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
-    if (error) {
-      return { user: null, error: error.message };
+    if (error || !data.user) {
+      return { user: null, error: error?.message ?? "Login gagal. Data pengguna tidak tersedia." };
     }
 
-    return await getCurrentUserProfile();
+    const result = await loadUserProfile(data.user.id);
+    cachedCurrentUser = result.user;
+    cachedCurrentUserAt = result.user ? Date.now() : 0;
+    return result;
   } catch (error) {
     return { user: null, error: getAuthErrorMessage(error) };
   }
@@ -76,42 +104,91 @@ export async function getCurrentSession() {
   }
 }
 
-export async function getCurrentUserProfile(): Promise<{
+async function loadUserProfile(userId: string): Promise<{
   user: AppUser | null;
   error: string | null;
 }> {
   try {
     const supabase = createSupabaseBrowserClient();
-    const { data: authData, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !authData.user) {
-      cachedCurrentUser = null;
-      return { user: null, error: authError?.message ?? null };
-    }
-
     const { data: profile, error: profileError } = await supabase
       .from("user_profiles")
       .select("id,email,full_name,role,laboratory_id,is_active")
-      .eq("id", authData.user.id)
+      .eq("id", userId)
       .single();
 
     if (profileError || !profile) {
-      cachedCurrentUser = null;
       return { user: null, error: "Profil pengguna belum dibuat. Hubungi admin." };
     }
 
     const mapped = mapUserProfile(profile as UserProfileRow);
     if (!mapped.isActive) {
-      cachedCurrentUser = null;
       return { user: null, error: "Akun tidak aktif. Hubungi admin." };
     }
 
-    cachedCurrentUser = mapped;
     return { user: mapped, error: null };
   } catch (error) {
-    cachedCurrentUser = null;
     return { user: null, error: getAuthErrorMessage(error) };
   }
+}
+
+async function loadCurrentUserProfile(): Promise<{
+  user: AppUser | null;
+  error: string | null;
+}> {
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const authResult = await withTimeout(
+      supabase.auth.getUser(),
+      AUTH_VALIDATION_TIMEOUT_MS,
+    );
+
+    if (!authResult) {
+      void supabase.auth.signOut({ scope: "local" });
+      return { user: null, error: "Validasi sesi terlalu lama. Silakan masuk kembali." };
+    }
+
+    const { data: authData, error: authError } = authResult;
+
+    if (authError || !authData.user) {
+      return { user: null, error: authError?.message ?? null };
+    }
+
+    return await loadUserProfile(authData.user.id);
+  } catch (error) {
+    return { user: null, error: getAuthErrorMessage(error) };
+  }
+}
+
+export function getCurrentUserProfile(options: { forceRefresh?: boolean } = {}): Promise<{
+  user: AppUser | null;
+  error: string | null;
+}> {
+  if (
+    !options.forceRefresh &&
+    cachedCurrentUser &&
+    Date.now() - cachedCurrentUserAt < PROFILE_CACHE_TTL_MS
+  ) {
+    return Promise.resolve({ user: cachedCurrentUser, error: null });
+  }
+
+  if (currentUserRequest) return currentUserRequest;
+
+  const requestGeneration = currentUserRequestGeneration;
+  currentUserRequest = loadCurrentUserProfile()
+    .then((result) => {
+      if (requestGeneration !== currentUserRequestGeneration) {
+        return { user: null, error: null };
+      }
+      cachedCurrentUser = result.user;
+      cachedCurrentUserAt = result.user ? Date.now() : 0;
+      return result;
+    })
+    .finally(() => {
+      if (requestGeneration === currentUserRequestGeneration) {
+        currentUserRequest = null;
+      }
+    });
+  return currentUserRequest;
 }
 
 /**
