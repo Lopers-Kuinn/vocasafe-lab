@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Download, Loader2, Package, Plus, RefreshCw, Search } from "lucide-react";
+import { AlertTriangle, Download, Loader2, Package, Plus, RefreshCw, Search, SlidersHorizontal } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import AssetFormModal from "@/components/assets/AssetFormModal";
+import MobileFilterSheet from "@/components/mobile/MobileFilterSheet";
 import {
   fetchAssets,
   fetchLaboratories,
@@ -21,6 +22,7 @@ import {
 } from "@/lib/asset-safety";
 import { exportAssetRegisterCsv } from "@/lib/export-assets";
 import { canManageAssetData } from "@/lib/role-access";
+import { useViewStateMemory } from "@/lib/use-view-state-memory";
 import type { AppUser } from "@/types";
 
 const statusColors: Record<DatabaseAssetStatus, string> = {
@@ -81,6 +83,10 @@ export default function AssetsPage() {
   const [operationalFilter, setOperationalFilter] = useState<
     "semua" | AssetOperationalState
   >("semua");
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [draftKindFilter, setDraftKindFilter] = useState<"semua" | DatabaseAssetKind>("semua");
+  const [draftStatusFilter, setDraftStatusFilter] = useState<"semua" | DatabaseAssetStatus>("semua");
+  const [draftOperationalFilter, setDraftOperationalFilter] = useState<"semua" | AssetOperationalState>("semua");
 
   function retryLoadAssets() {
     setLoading(true);
@@ -147,6 +153,40 @@ export default function AssetsPage() {
     });
   }, [assets, kindFilter, operationalFilter, search, statusFilter]);
 
+  const pendingMobileResultCount = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase("id-ID");
+    return assets.filter((asset) => {
+      const matchesSearch = !query || [asset.name, asset.code, asset.location, asset.category, asset.manufacturer, asset.model, asset.serialNumber, asset.laboratory?.name].some((value) => value?.toLocaleLowerCase("id-ID").includes(query));
+      return matchesSearch &&
+        (draftKindFilter === "semua" || asset.kind === draftKindFilter) &&
+        (draftStatusFilter === "semua" || asset.status === draftStatusFilter) &&
+        (draftOperationalFilter === "semua" || asset.operationalState === draftOperationalFilter);
+    }).length;
+  }, [assets, draftKindFilter, draftOperationalFilter, draftStatusFilter, search]);
+
+  const activeFilterCount = [kindFilter, operationalFilter, statusFilter].filter(
+    (value) => value !== "semua",
+  ).length;
+
+  function openMobileFilters() {
+    setDraftKindFilter(kindFilter);
+    setDraftStatusFilter(statusFilter);
+    setDraftOperationalFilter(operationalFilter);
+    setShowMobileFilters(true);
+  }
+
+  useViewStateMemory(
+    "vocasafe_assets_list_view_v1",
+    { search, kindFilter, statusFilter, operationalFilter },
+    (saved) => {
+      if (typeof saved.search === "string") setSearch(saved.search);
+      if (saved.kindFilter === "semua" || saved.kindFilter === "alat" || saved.kindFilter === "fasilitas") setKindFilter(saved.kindFilter);
+      if (saved.statusFilter === "semua" || saved.statusFilter === "layak" || saved.statusFilter === "perlu_dicek" || saved.statusFilter === "tidak_layak") setStatusFilter(saved.statusFilter);
+      if (typeof saved.operationalFilter === "string" && ["semua", ...Object.keys(operationalLabels)].includes(saved.operationalFilter)) setOperationalFilter(saved.operationalFilter as "semua" | AssetOperationalState);
+    },
+    !loading,
+  );
+
   const assetCounts = useMemo(() => {
     return {
       active: assets.filter((asset) => asset.operationalState === "aktif").length,
@@ -192,11 +232,11 @@ export default function AssetsPage() {
         </div>
 
         {!loading && !error && (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Aktif</p><p className="mt-1 text-2xl font-bold text-emerald-950">{assetCounts.active}</p></div>
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Dibatasi / Isolasi</p><p className="mt-1 text-2xl font-bold text-amber-950">{assetCounts.restricted}</p></div>
-            <div className="rounded-xl border border-red-200 bg-red-50 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-red-700">Inspeksi Terlambat</p><p className="mt-1 text-2xl font-bold text-red-950">{assetCounts.overdue}</p></div>
-            <div className="rounded-xl border border-sky-200 bg-sky-50 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-sky-700">Tindak Lanjut Compliance</p><p className="mt-1 text-2xl font-bold text-sky-950">{remoteCompliance.openWorkOrders + remoteCompliance.pendingReviews + remoteCompliance.expiredCertificates + remoteCompliance.certificatesDueSoon}</p><p className="mt-1 text-xs text-sky-700">WO {remoteCompliance.openWorkOrders} · review {remoteCompliance.pendingReviews} · sertifikat {remoteCompliance.expiredCertificates + remoteCompliance.certificatesDueSoon}</p></div>
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 sm:p-4"><p className="text-[10px] font-semibold uppercase tracking-wide text-emerald-700 sm:text-xs">Aktif</p><p className="mt-1 text-xl font-bold text-emerald-950 sm:text-2xl">{assetCounts.active}</p></div>
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 sm:p-4"><p className="text-[10px] font-semibold uppercase tracking-wide text-amber-700 sm:text-xs">Dibatasi / Isolasi</p><p className="mt-1 text-xl font-bold text-amber-950 sm:text-2xl">{assetCounts.restricted}</p></div>
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-3 sm:p-4"><p className="text-[10px] font-semibold uppercase tracking-wide text-red-700 sm:text-xs">Inspeksi Terlambat</p><p className="mt-1 text-xl font-bold text-red-950 sm:text-2xl">{assetCounts.overdue}</p></div>
+            <div className="rounded-2xl border border-sky-200 bg-sky-50 p-3 sm:p-4"><p className="text-[10px] font-semibold uppercase tracking-wide text-sky-700 sm:text-xs">Tindak Lanjut</p><p className="mt-1 text-xl font-bold text-sky-950 sm:text-2xl">{remoteCompliance.openWorkOrders + remoteCompliance.pendingReviews + remoteCompliance.expiredCertificates + remoteCompliance.certificatesDueSoon}</p><p className="mt-1 hidden text-xs text-sky-700 sm:block">WO {remoteCompliance.openWorkOrders} · review {remoteCompliance.pendingReviews} · sertifikat {remoteCompliance.expiredCertificates + remoteCompliance.certificatesDueSoon}</p></div>
           </div>
         )}
         {complianceWarning && !loading && !error && (
@@ -205,7 +245,7 @@ export default function AssetsPage() {
           </p>
         )}
 
-        <div className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_150px_170px_190px]">
+        <div className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_150px_170px_190px]">
           <label className="relative block">
             <span className="sr-only">Cari aset</span>
             <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
@@ -214,11 +254,16 @@ export default function AssetsPage() {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Cari nama, kode, lokasi, produsen, model, atau nomor seri"
-              className="w-full rounded-md border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+              className="min-h-11 w-full rounded-xl border border-slate-300 py-2 pl-9 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
             />
           </label>
 
-          <label>
+          <button type="button" onClick={openMobileFilters} className="flex min-h-12 items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-700 md:hidden">
+            <span className="inline-flex items-center gap-2"><SlidersHorizontal className="h-4 w-4" /> Filter aset</span>
+            <span className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-500">{activeFilterCount} aktif</span>
+          </button>
+
+          <label className="hidden md:block">
             <span className="sr-only">Filter jenis aset</span>
             <select
               value={kindFilter}
@@ -233,7 +278,7 @@ export default function AssetsPage() {
             </select>
           </label>
 
-          <label>
+          <label className="hidden md:block">
             <span className="sr-only">Filter status operasional</span>
             <select
               value={operationalFilter}
@@ -247,7 +292,7 @@ export default function AssetsPage() {
             </select>
           </label>
 
-          <label>
+          <label className="hidden md:block">
             <span className="sr-only">Filter status aset</span>
             <select
               value={statusFilter}
@@ -265,6 +310,14 @@ export default function AssetsPage() {
             </select>
           </label>
         </div>
+
+        {activeFilterCount > 0 && (
+          <div className="-mt-3 flex gap-2 overflow-x-auto pb-1 md:hidden" aria-label="Filter aset aktif">
+            {kindFilter !== "semua" && <button type="button" onClick={() => setKindFilter("semua")} className="shrink-0 rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-800">{kindFilter === "alat" ? "Alat" : "Fasilitas"} ×</button>}
+            {operationalFilter !== "semua" && <button type="button" onClick={() => setOperationalFilter("semua")} className="shrink-0 rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-800">{operationalLabels[operationalFilter]} ×</button>}
+            {statusFilter !== "semua" && <button type="button" onClick={() => setStatusFilter("semua")} className="shrink-0 rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-800">{statusLabels[statusFilter]} ×</button>}
+          </div>
+        )}
 
         {loading ? (
           <div className="flex min-h-48 items-center justify-center rounded-lg border border-slate-200 bg-white">
@@ -360,6 +413,23 @@ export default function AssetsPage() {
           }}
         />
       )}
+
+      <MobileFilterSheet
+        open={showMobileFilters}
+        title="Filter aset"
+        resultCount={pendingMobileResultCount}
+        onClose={() => setShowMobileFilters(false)}
+        onReset={() => {
+          setDraftKindFilter("semua"); setDraftStatusFilter("semua"); setDraftOperationalFilter("semua");
+        }}
+        onApply={() => {
+          setKindFilter(draftKindFilter); setStatusFilter(draftStatusFilter); setOperationalFilter(draftOperationalFilter); setShowMobileFilters(false);
+        }}
+      >
+        <label className="text-sm font-semibold text-slate-700">Jenis aset<select value={draftKindFilter} onChange={(event) => setDraftKindFilter(event.target.value as "semua" | DatabaseAssetKind)} className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"><option value="semua">Semua jenis</option><option value="alat">Alat</option><option value="fasilitas">Fasilitas</option></select></label>
+        <label className="text-sm font-semibold text-slate-700">Status operasional<select value={draftOperationalFilter} onChange={(event) => setDraftOperationalFilter(event.target.value as "semua" | AssetOperationalState)} className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"><option value="semua">Semua operasional</option>{Object.entries(operationalLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <label className="text-sm font-semibold text-slate-700">Status kelayakan<select value={draftStatusFilter} onChange={(event) => setDraftStatusFilter(event.target.value as "semua" | DatabaseAssetStatus)} className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"><option value="semua">Semua status</option><option value="layak">Layak</option><option value="perlu_dicek">Perlu dicek</option><option value="tidak_layak">Tidak layak</option></select></label>
+      </MobileFilterSheet>
     </AppShell>
   );
 }

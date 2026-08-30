@@ -7,11 +7,14 @@ import {
   AlertCircle,
   Ambulance,
   ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   Clock3,
   EyeOff,
   FileImage,
   Loader2,
+  Save,
   Send,
   Siren,
   Users,
@@ -53,6 +56,8 @@ interface AIRiskSuggestionResponse {
 }
 
 type AIReviewDecision = "pending" | "applied" | "manual";
+
+const REPORT_DRAFT_KEY = "vocasafe_report_draft_v1";
 
 const AI_PROVIDERS = new Set<AIRecommendationProvider>([
   "fallback",
@@ -204,6 +209,38 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+interface ReportDraft {
+  selectedAssetId: string;
+  selectedLaboratoryId: string;
+  reportType: ReportType;
+  hazardCategory: HazardCategory | "";
+  occurredAt: string;
+  activityAtTime: string;
+  title: string;
+  description: string;
+  location: string;
+  hazardActive: boolean | null;
+  immediateAction: string;
+  picNotified: boolean;
+  peopleAffected: boolean;
+  injuryDetails: string;
+  witnessDetails: string;
+  isConfidential: boolean;
+  severity: number | null;
+  probability: number | null;
+  exposure: number | null;
+  mobileStep: 1 | 2 | 3 | 4;
+}
+
+function readReportDraft(): ReportDraft | null {
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(REPORT_DRAFT_KEY) ?? "null");
+    return isRecord(parsed) ? (parsed as unknown as ReportDraft) : null;
+  } catch {
+    return null;
+  }
+}
+
 function isScaleValue(value: unknown): value is number {
   return (
     typeof value === "number" &&
@@ -291,6 +328,7 @@ function NewReportPage() {
   const [evidenceFiles, setEvidenceFiles] = useState<File[]>([]);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [mobileStep, setMobileStep] = useState<1 | 2 | 3 | 4>(1);
   const [createdReportId, setCreatedReportId] = useState("");
   const [attachmentWarning, setAttachmentWarning] = useState("");
   const [aiSuggestion, setAiSuggestion] =
@@ -304,45 +342,79 @@ function NewReportPage() {
   const aiRequestSequenceRef = useRef(0);
   const aiContextFingerprintRef = useRef("");
   const aiLoadingRef = useRef(false);
+  const draftReadyRef = useRef(false);
 
   useEffect(() => {
     let active = true;
 
     void Promise.all([fetchAssets(), fetchLaboratories()]).then(
       ([result, laboratoryResult]) => {
-      if (!active) return;
+        if (!active) return;
 
-      setAssets(result.assets);
-      setLaboratories(laboratoryResult.laboratories);
-      setAssetsLoading(false);
+        setAssets(result.assets);
+        setLaboratories(laboratoryResult.laboratories);
+        setAssetsLoading(false);
 
-      if (result.error || laboratoryResult.error) {
-        setAssetError(
-          `Data lokasi tidak dapat dimuat: ${[result.error, laboratoryResult.error]
-            .filter(Boolean)
-            .join("; ")}`,
+        if (result.error || laboratoryResult.error) {
+          setAssetError(
+            `Data lokasi tidak dapat dimuat: ${[result.error, laboratoryResult.error]
+              .filter(Boolean)
+              .join("; ")}`,
+          );
+          return;
+        }
+
+        const draft = readReportDraft();
+        if (draft) {
+          const draftAssetExists = result.assets.some((asset) => asset.id === draft.selectedAssetId);
+          const draftLaboratoryExists = laboratoryResult.laboratories.some(
+            (laboratory) => laboratory.id === draft.selectedLaboratoryId,
+          );
+          setSelectedAssetId(draftAssetExists ? draft.selectedAssetId : "");
+          setSelectedLaboratoryId(draftLaboratoryExists ? draft.selectedLaboratoryId : "");
+          setReportType(draft.reportType ?? "kondisi_tidak_aman");
+          setHazardCategory(draft.hazardCategory ?? "");
+          setOccurredAt(draft.occurredAt || localDateTimeValue());
+          setActivityAtTime(draft.activityAtTime ?? "");
+          setTitle(draft.title ?? "");
+          setDescription(draft.description ?? "");
+          setLocation(draft.location ?? "");
+          setHazardActive(typeof draft.hazardActive === "boolean" ? draft.hazardActive : null);
+          setImmediateAction(draft.immediateAction ?? "");
+          setPicNotified(Boolean(draft.picNotified));
+          setPeopleAffected(Boolean(draft.peopleAffected));
+          setInjuryDetails(draft.injuryDetails ?? "");
+          setWitnessDetails(draft.witnessDetails ?? "");
+          setIsConfidential(Boolean(draft.isConfidential));
+          setSeverity(isScaleValue(draft.severity) ? draft.severity : null);
+          setProbability(isScaleValue(draft.probability) ? draft.probability : null);
+          setExposure(isScaleValue(draft.exposure) ? draft.exposure : null);
+          setMobileStep([1, 2, 3, 4].includes(draft.mobileStep) ? draft.mobileStep : 1);
+        }
+
+        if (!presetAsset) {
+          draftReadyRef.current = true;
+          return;
+        }
+
+        const matched = result.assets.find(
+          (asset) =>
+            asset.id === presetAsset ||
+            asset.code.toLowerCase() === presetAsset.toLowerCase(),
         );
-        return;
-      }
 
-      if (!presetAsset) return;
+        if (!matched) {
+          setAssetError(
+            `Aset ${presetAsset} tidak ditemukan. Pilih aset lain secara manual.`,
+          );
+          draftReadyRef.current = true;
+          return;
+        }
 
-      const matched = result.assets.find(
-        (asset) =>
-          asset.id === presetAsset ||
-          asset.code.toLowerCase() === presetAsset.toLowerCase(),
-      );
-
-      if (!matched) {
-        setAssetError(
-          `Aset ${presetAsset} tidak ditemukan. Pilih aset lain secara manual.`,
-        );
-        return;
-      }
-
-      setSelectedAssetId(matched.id);
-      setSelectedLaboratoryId(matched.laboratoryId ?? "");
-      setLocation(matched.location ?? matched.laboratory?.location ?? "");
+        setSelectedAssetId(matched.id);
+        setSelectedLaboratoryId(matched.laboratoryId ?? "");
+        setLocation(matched.location ?? matched.laboratory?.location ?? "");
+        draftReadyRef.current = true;
       },
     );
 
@@ -350,6 +422,34 @@ function NewReportPage() {
       active = false;
     };
   }, [presetAsset]);
+
+  useEffect(() => {
+    if (!draftReadyRef.current || createdReportId) return;
+
+    const draft: ReportDraft = {
+      selectedAssetId,
+      selectedLaboratoryId,
+      reportType,
+      hazardCategory,
+      occurredAt,
+      activityAtTime,
+      title,
+      description,
+      location,
+      hazardActive,
+      immediateAction,
+      picNotified,
+      peopleAffected,
+      injuryDetails,
+      witnessDetails,
+      isConfidential,
+      severity,
+      probability,
+      exposure,
+      mobileStep,
+    };
+    window.localStorage.setItem(REPORT_DRAFT_KEY, JSON.stringify(draft));
+  }, [activityAtTime, createdReportId, description, exposure, hazardActive, hazardCategory, immediateAction, injuryDetails, isConfidential, location, mobileStep, occurredAt, peopleAffected, picNotified, probability, reportType, selectedAssetId, selectedLaboratoryId, severity, title, witnessDetails]);
 
   useEffect(() => {
     return () => {
@@ -393,6 +493,50 @@ function NewReportPage() {
     probability,
     exposure,
   });
+
+  const mobileStepLabels = ["Temuan", "Pengamanan", "Risiko", "Bukti & kirim"];
+
+  function goToNextMobileStep() {
+    setError("");
+
+    if (mobileStep === 1) {
+      if (!selectedLaboratory) {
+        setError("Pilih laboratorium tempat temuan terlebih dahulu.");
+        return;
+      }
+      if (!hazardCategory || !title.trim() || !description.trim() || !location.trim()) {
+        setError("Lengkapi kategori bahaya, judul, deskripsi, dan lokasi sebelum melanjutkan.");
+        return;
+      }
+      if (!occurredAt || Number.isNaN(new Date(occurredAt).getTime())) {
+        setError("Tanggal dan waktu kejadian tidak valid.");
+        return;
+      }
+    }
+
+    if (mobileStep === 2) {
+      if (hazardActive === null) {
+        setError("Pilih apakah kondisi berbahaya masih berlangsung.");
+        return;
+      }
+      if (hazardActive && !immediateAction.trim()) {
+        setError("Jelaskan tindakan sementara atau tulis bahwa belum ada tindakan.");
+        return;
+      }
+      if (peopleAffected && !injuryDetails.trim()) {
+        setError("Jelaskan kondisi orang yang terdampak atau cedera yang dialami.");
+        return;
+      }
+    }
+
+    if (mobileStep === 3 && !hasCompleteRisk) {
+      setError("Pilih nilai dampak, kemungkinan, dan frekuensi paparan sebelum melanjutkan.");
+      return;
+    }
+
+    setMobileStep((current) => Math.min(4, current + 1) as 1 | 2 | 3 | 4);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   useEffect(() => {
     aiContextFingerprintRef.current = aiContextFingerprint;
@@ -601,16 +745,19 @@ function NewReportPage() {
     setAttachmentWarning("");
 
     if (!selectedLaboratory) {
+      setMobileStep(1);
       setError("Pilih laboratorium tempat temuan terlebih dahulu.");
       return;
     }
 
     if (!hazardCategory || !title.trim() || !description.trim() || !location.trim()) {
+      setMobileStep(1);
       setError("Kategori bahaya, judul, deskripsi, dan lokasi wajib diisi.");
       return;
     }
 
     if (!occurredAt || Number.isNaN(new Date(occurredAt).getTime())) {
+      setMobileStep(1);
       setError("Tanggal dan waktu kejadian tidak valid.");
       return;
     }
@@ -621,11 +768,13 @@ function NewReportPage() {
     }
 
     if (hazardActive === null) {
+      setMobileStep(2);
       setError("Pilih apakah kondisi berbahaya masih berlangsung.");
       return;
     }
 
     if (hazardActive && !immediateAction.trim()) {
+      setMobileStep(2);
       setError(
         "Jelaskan tindakan sementara atau tulis bahwa belum ada tindakan.",
       );
@@ -633,11 +782,13 @@ function NewReportPage() {
     }
 
     if (peopleAffected && !injuryDetails.trim()) {
+      setMobileStep(2);
       setError("Jelaskan kondisi orang yang terdampak atau cedera yang dialami.");
       return;
     }
 
     if (!hasCompleteRisk) {
+      setMobileStep(3);
       setError("Pilih nilai dampak, kemungkinan, dan frekuensi paparan.");
       return;
     }
@@ -704,6 +855,7 @@ function NewReportPage() {
     }
 
     setCreatedReportId(result.report.id);
+    window.localStorage.removeItem(REPORT_DRAFT_KEY);
     setSubmitting(false);
   }
 
@@ -728,6 +880,8 @@ function NewReportPage() {
     setError("");
     setAttachmentWarning("");
     setCreatedReportId("");
+    setMobileStep(1);
+    window.localStorage.removeItem(REPORT_DRAFT_KEY);
     invalidateAiState();
   }
 
@@ -802,8 +956,29 @@ function NewReportPage() {
           </p>
         </div>
 
+        <section className="rounded-[24px] border border-emerald-100 bg-white/90 p-4 shadow-sm md:hidden" aria-label="Progres laporan">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">Langkah {mobileStep} dari 4</p>
+              <p className="mt-1 text-sm font-bold text-slate-950">{mobileStepLabels[mobileStep - 1]}</p>
+            </div>
+            <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">{mobileStep * 25}%</span>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
+            <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 transition-[width] duration-300" style={{ width: `${mobileStep * 25}%` }} />
+          </div>
+          <div className="mt-3 grid grid-cols-4 gap-1">
+            {mobileStepLabels.map((label, index) => (
+              <button key={label} type="button" disabled={index + 1 > mobileStep} onClick={() => setMobileStep((index + 1) as 1 | 2 | 3 | 4)} className={`min-h-8 rounded-lg px-1 text-[9px] font-semibold ${mobileStep === index + 1 ? "bg-[#102c23] text-white" : "bg-slate-50 text-slate-500 disabled:opacity-60"}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-3 flex items-center gap-1.5 text-[10px] font-semibold text-slate-500"><Save className="h-3.5 w-3.5 text-emerald-700" /> Draft tersimpan otomatis di perangkat ini</p>
+        </section>
+
         <form onSubmit={handleSubmit} className="space-y-6">
-          <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <section className={`${mobileStep === 1 ? "block" : "hidden md:block"} space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6`}>
             <div className="flex items-start gap-3">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 font-bold text-emerald-700">1</span>
               <div>
@@ -1010,7 +1185,7 @@ function NewReportPage() {
             </label>
           </section>
 
-          <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <section className={`${mobileStep === 2 ? "block" : "hidden md:block"} space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6`}>
             <div className="flex items-start gap-3">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 font-bold text-amber-700">2</span>
               <div>
@@ -1089,7 +1264,7 @@ function NewReportPage() {
             </label>
           </section>
 
-          <section className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <section className={`${mobileStep === 3 ? "block" : "hidden md:block"} space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6`}>
             <div className="flex items-start gap-3">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-100 font-bold text-blue-700">3</span>
               <div>
@@ -1274,7 +1449,7 @@ function NewReportPage() {
             </div>
           </section>
 
-          <section className="space-y-3 rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <section className={`${mobileStep === 4 ? "block" : "hidden md:block"} space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6`}>
             <div className="flex items-center gap-2">
               <FileImage className="h-5 w-5 text-slate-600" />
               <h2 className="text-lg font-semibold text-slate-900">Foto Bukti</h2>
@@ -1302,6 +1477,16 @@ function NewReportPage() {
                 ))}
               </div>
             )}
+
+            <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 md:hidden">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-700">Review sebelum kirim</p>
+              <dl className="mt-3 space-y-2 text-sm">
+                <div className="flex justify-between gap-4"><dt className="text-slate-500">Temuan</dt><dd className="text-right font-semibold text-slate-900">{title || "Belum diisi"}</dd></div>
+                <div className="flex justify-between gap-4"><dt className="text-slate-500">Lokasi</dt><dd className="text-right font-semibold text-slate-900">{location || "Belum diisi"}</dd></div>
+                <div className="flex justify-between gap-4"><dt className="text-slate-500">Status bahaya</dt><dd className="text-right font-semibold text-slate-900">{hazardActive === null ? "Belum dipilih" : hazardActive ? "Masih aktif" : "Sudah diamankan"}</dd></div>
+                <div className="flex justify-between gap-4"><dt className="text-slate-500">Risiko</dt><dd className="text-right font-semibold capitalize text-slate-900">{previewRisk ? `${previewRisk.score} · ${previewRisk.category}` : "Belum lengkap"}</dd></div>
+              </dl>
+            </div>
           </section>
 
           {error && (
@@ -1316,7 +1501,7 @@ function NewReportPage() {
           <button
             type="submit"
             disabled={submitting || assetsLoading}
-            className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-400"
+            className="hidden min-h-12 w-full items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-400 md:inline-flex"
           >
             {submitting ? (
               <>
@@ -1328,6 +1513,23 @@ function NewReportPage() {
               </>
             )}
           </button>
+
+          <div className="sticky bottom-[calc(6.8rem+env(safe-area-inset-bottom))] z-30 -mx-2 flex gap-2 rounded-[22px] border border-slate-200/80 bg-white/95 p-2 shadow-[0_14px_40px_rgba(15,23,42,0.18)] backdrop-blur-xl md:hidden">
+            {mobileStep > 1 && (
+              <button type="button" onClick={() => { setError(""); setMobileStep((current) => Math.max(1, current - 1) as 1 | 2 | 3 | 4); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="inline-flex min-h-12 flex-1 items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700">
+                <ChevronLeft className="h-4 w-4" /> Kembali
+              </button>
+            )}
+            {mobileStep < 4 ? (
+              <button type="button" onClick={goToNextMobileStep} className="inline-flex min-h-12 flex-[1.4] items-center justify-center gap-1 rounded-2xl bg-[#08775a] px-4 text-sm font-bold text-white shadow-lg">
+                Lanjutkan <ChevronRight className="h-4 w-4" />
+              </button>
+            ) : (
+              <button type="submit" disabled={submitting || assetsLoading} className="inline-flex min-h-12 flex-[1.4] items-center justify-center gap-2 rounded-2xl bg-[#08775a] px-4 text-sm font-bold text-white shadow-lg disabled:opacity-60">
+                {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Menyimpan...</> : <><Send className="h-4 w-4" /> Kirim Laporan</>}
+              </button>
+            )}
+          </div>
         </form>
       </div>
     </AppShell>

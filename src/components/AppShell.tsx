@@ -12,11 +12,15 @@ import {
   LayoutDashboard,
   Loader2,
   LogOut,
+  Menu,
   Package,
   QrCode,
+  Settings2,
   ShieldAlert,
   Sparkles,
+  X,
 } from "lucide-react";
+import ConnectionStatus from "@/components/mobile/ConnectionStatus";
 import {
   clearCachedCurrentUser,
   getCurrentUser,
@@ -44,7 +48,10 @@ const navItems = [
   { href: "/reports", label: "Laporan", mobileLabel: "Laporan", icon: FileWarning },
   { href: "/checklists", label: "Checklist", mobileLabel: "Checklist", icon: ClipboardCheck },
   { href: "/audit", label: "Audit", mobileLabel: "Audit", icon: FileText },
+  { href: "/admin", label: "Administrasi", mobileLabel: "Admin", icon: Settings2 },
 ];
+
+const mobilePrimaryHrefs = ["/dashboard", "/assets", "/scan", "/reports"] as const;
 
 function Brand({ compact = false }: { compact?: boolean }) {
   return (
@@ -90,6 +97,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(user === null);
   const [authError, setAuthError] = useState("");
   const [logoutError, setLogoutError] = useState("");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [inactivitySeconds, setInactivitySeconds] = useState(0);
   const inactivityLogoutStarted = useRef(false);
   const logoutReason = useRef<"inactive" | null>(null);
@@ -301,6 +309,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   const visibleNavItems = navItems.filter(({ href }) => canAccessRoute(user.role, href));
+  const mobilePrimaryRouteHrefs: readonly string[] =
+    user.role === "kepala_lab"
+      ? ["/dashboard", "/assets", "/reports", "/audit"]
+      : mobilePrimaryHrefs;
+  const mobilePrimaryItems = mobilePrimaryRouteHrefs
+    .map((href) => visibleNavItems.find((item) => item.href === href))
+    .filter((item): item is (typeof navItems)[number] => Boolean(item));
+  const mobileMoreItems = visibleNavItems.filter(
+    ({ href }) => !mobilePrimaryRouteHrefs.includes(href),
+  );
+  const mobileMoreActive = mobileMoreItems.some(
+    ({ href }) => pathname === href || pathname.startsWith(`${href}/`),
+  );
   const logoutErrorAlert = logoutError ? (
     <div
       role="alert"
@@ -368,6 +389,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 <span className="block truncate text-[10px] text-slate-500">{getRoleLabel(user.role)}</span>
               </span>
             </div>
+            <div className="hidden md:block"><ConnectionStatus compact /></div>
             <button
               type="button"
               onClick={handleLogout}
@@ -456,31 +478,111 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-[80] lg:hidden" role="dialog" aria-modal="true" aria-label="Menu lainnya">
+          <button
+            type="button"
+            aria-label="Tutup menu lainnya"
+            onClick={() => setMobileMenuOpen(false)}
+            className="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]"
+          />
+          <section className="premium-surface absolute inset-x-2 bottom-2 max-h-[min(76dvh,640px)] overflow-y-auto rounded-[30px] p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl">
+            <div className="flex items-center justify-between gap-3 px-1 pb-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-700 text-sm font-bold text-white">
+                  {userInitials(user.fullName)}
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-slate-950">{user.fullName}</p>
+                  <p className="truncate text-xs text-slate-500">{getRoleLabel(user.role)}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(false)}
+                aria-label="Tutup menu"
+                className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-slate-200 bg-white text-slate-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mb-3 px-1">
+              <ConnectionStatus />
+            </div>
+
+            <div className="grid gap-2 min-[390px]:grid-cols-2">
+              {mobileMoreItems.map(({ href, label, icon: Icon }) => {
+                const active = pathname === href || pathname.startsWith(`${href}/`);
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={`flex min-h-14 items-center gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold transition active:scale-[0.98] ${
+                      active
+                        ? "border-emerald-900 bg-[#102c23] text-white"
+                        : "border-slate-200 bg-white text-slate-700"
+                    }`}
+                  >
+                    <Icon className="h-5 w-5 shrink-0" />
+                    {label}
+                  </Link>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setMobileMenuOpen(false);
+                void handleLogout();
+              }}
+              className="mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 text-sm font-bold text-red-700 active:scale-[0.99]"
+            >
+              <LogOut className="h-4 w-4" />
+              Keluar dari aplikasi
+            </button>
+          </section>
+        </div>
+      )}
+
       <nav
         aria-label="Navigasi utama mobile"
-        className="premium-surface fixed inset-x-2 bottom-2 z-40 grid min-w-0 gap-1 rounded-[24px] px-2 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] shadow-[0_18px_50px_rgba(16,44,35,0.2)] lg:hidden"
-        style={{
-          gridTemplateColumns: `repeat(${visibleNavItems.length}, minmax(0, 1fr))`,
-        }}
+        className="premium-surface fixed inset-x-2 bottom-2 z-40 grid min-w-0 grid-cols-5 gap-1 rounded-[24px] px-2 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] shadow-[0_18px_50px_rgba(16,44,35,0.2)] lg:hidden"
       >
-        {visibleNavItems.map(({ href, mobileLabel, icon: Icon }) => {
+        {mobilePrimaryItems.map(({ href, mobileLabel, icon: Icon }) => {
           const active = pathname === href || pathname.startsWith(`${href}/`);
+          const isScan = href === "/scan";
           return (
             <Link
               key={href}
               href={href}
               aria-current={active ? "page" : undefined}
-              className={`flex min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-center text-[9px] font-semibold leading-tight transition ${
+              className={`relative flex min-h-12 min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-center text-[10px] font-semibold leading-tight transition active:scale-95 ${
                 active
                   ? "bg-[#102c23] text-white shadow-[0_8px_20px_rgba(16,44,35,0.18)]"
                   : "text-slate-500 hover:bg-emerald-50 hover:text-emerald-800"
-              }`}
+              } ${isScan ? "-mt-5 min-h-16 border-4 border-[#f8fbf8] bg-emerald-700 text-white shadow-[0_12px_28px_rgba(8,119,90,0.3)]" : ""}`}
             >
-              <Icon className="h-4 w-4 shrink-0" />
+              <Icon className={`${isScan ? "h-6 w-6" : "h-5 w-5"} shrink-0`} />
               <span className="max-w-full leading-none">{mobileLabel}</span>
             </Link>
           );
         })}
+        <button
+          type="button"
+          onClick={() => setMobileMenuOpen(true)}
+          aria-expanded={mobileMenuOpen}
+          className={`flex min-h-12 min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 text-center text-[10px] font-semibold leading-tight transition active:scale-95 ${
+            mobileMoreActive
+              ? "bg-[#102c23] text-white shadow-[0_8px_20px_rgba(16,44,35,0.18)]"
+              : "text-slate-500 hover:bg-emerald-50 hover:text-emerald-800"
+          }`}
+        >
+          <Menu className="h-5 w-5" />
+          <span className="leading-none">Lainnya</span>
+        </button>
       </nav>
     </div>
   );

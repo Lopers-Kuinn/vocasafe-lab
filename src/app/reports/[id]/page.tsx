@@ -249,6 +249,18 @@ export default function ReportDetailPage() {
           <ArrowLeft className="h-4 w-4" /> Kembali
         </Link>
 
+        <section className={`rounded-[26px] border p-5 shadow-sm md:hidden ${report.riskCategory === "kritis" || report.hazardActive ? "border-red-200 bg-red-50" : "border-emerald-200 bg-emerald-50"}`}>
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Status keputusan</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <span className={`rounded-full px-3 py-1 text-xs font-bold ${riskColors[report.riskCategory]}`}>{capitalize(report.riskCategory)} · {report.riskScore}</span>
+            <span className={`rounded-full px-3 py-1 text-xs font-bold ${statusColors[report.status]}`}>{statusLabels[report.status]}</span>
+            {report.hazardActive && report.status !== "selesai" && <span className="rounded-full bg-red-700 px-3 py-1 text-xs font-bold text-white">Bahaya aktif</span>}
+          </div>
+          <h1 className="mt-4 break-words text-xl font-bold tracking-[-0.03em] text-slate-950">{report.title}</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-700">{report.recommendation}</p>
+          {report.hazardActive && report.status !== "selesai" && <p className="mt-4 rounded-2xl bg-white/80 p-3 text-sm font-semibold leading-5 text-red-800">Amankan area dan jangan melanjutkan aktivitas sampai petugas menyatakan kondisi aman.</p>}
+        </section>
+
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">

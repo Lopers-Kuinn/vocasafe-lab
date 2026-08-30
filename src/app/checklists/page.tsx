@@ -9,8 +9,10 @@ import {
   Loader2,
   Plus,
   Search,
+  SlidersHorizontal,
 } from "lucide-react";
 import AppShell from "@/components/AppShell";
+import MobileFilterSheet from "@/components/mobile/MobileFilterSheet";
 import { getCurrentUserProfile } from "@/lib/auth";
 import {
   fetchActiveChecklistTemplates,
@@ -19,6 +21,7 @@ import {
   type DatabaseChecklistTemplate,
 } from "@/lib/checklists";
 import type { RiskLevel } from "@/types";
+import { useViewStateMemory } from "@/lib/use-view-state-memory";
 
 const riskColors: Record<RiskLevel, string> = {
   rendah: "bg-green-100 text-green-800",
@@ -81,6 +84,12 @@ export default function ChecklistsPage() {
   const [templateFilter, setTemplateFilter] = useState("semua");
   const [laboratoryFilter, setLaboratoryFilter] = useState("semua");
   const [canCreate, setCanCreate] = useState(false);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [draftFindingFilter, setDraftFindingFilter] = useState<FindingFilter>("semua");
+  const [draftTimeFilter, setDraftTimeFilter] = useState<TimeFilter>("semua");
+  const [draftAssetFilter, setDraftAssetFilter] = useState("semua");
+  const [draftTemplateFilter, setDraftTemplateFilter] = useState("semua");
+  const [draftLaboratoryFilter, setDraftLaboratoryFilter] = useState("semua");
 
   useEffect(() => {
     let active = true;
@@ -154,6 +163,41 @@ export default function ChecklistsPage() {
     laboratories: [...new Map(results.filter((result) => result.laboratory).map((result) => [result.laboratoryId, result.laboratory])).entries()],
   }), [results]);
 
+  const pendingMobileResultCount = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase("id-ID");
+    return results.filter((result) => {
+      const matchesSearch = !query || [result.asset?.name, result.asset?.code, result.asset?.location, result.inspector?.fullName, result.overallNote].some((value) => value?.toLocaleLowerCase("id-ID").includes(query));
+      const matchesFinding = draftFindingFilter === "semua" || (draftFindingFilter === "tanpa_temuan" ? !result.hasRiskFinding : result.hasRiskFinding && result.riskCategory === draftFindingFilter);
+      return matchesSearch && matchesFinding &&
+        (draftAssetFilter === "semua" || result.assetId === draftAssetFilter) &&
+        (draftTemplateFilter === "semua" || result.templateId === draftTemplateFilter) &&
+        (draftLaboratoryFilter === "semua" || result.laboratoryId === draftLaboratoryFilter) &&
+        matchesTimeFilter(result.completedAt, draftTimeFilter);
+    }).length;
+  }, [draftAssetFilter, draftFindingFilter, draftLaboratoryFilter, draftTemplateFilter, draftTimeFilter, results, search]);
+
+  const activeFilterCount = [findingFilter, timeFilter, assetFilter, templateFilter, laboratoryFilter].filter((value) => value !== "semua").length;
+
+  function openMobileFilters() {
+    setDraftFindingFilter(findingFilter); setDraftTimeFilter(timeFilter);
+    setDraftAssetFilter(assetFilter); setDraftTemplateFilter(templateFilter);
+    setDraftLaboratoryFilter(laboratoryFilter); setShowMobileFilters(true);
+  }
+
+  useViewStateMemory(
+    "vocasafe_checklists_list_view_v1",
+    { search, findingFilter, timeFilter, assetFilter, templateFilter, laboratoryFilter },
+    (saved) => {
+      if (typeof saved.search === "string") setSearch(saved.search);
+      if (typeof saved.findingFilter === "string") setFindingFilter(saved.findingFilter as FindingFilter);
+      if (typeof saved.timeFilter === "string") setTimeFilter(saved.timeFilter as TimeFilter);
+      if (typeof saved.assetFilter === "string") setAssetFilter(saved.assetFilter);
+      if (typeof saved.templateFilter === "string") setTemplateFilter(saved.templateFilter);
+      if (typeof saved.laboratoryFilter === "string") setLaboratoryFilter(saved.laboratoryFilter);
+    },
+    !loading,
+  );
+
   return (
     <AppShell>
       <div className="space-y-6">
@@ -176,7 +220,7 @@ export default function ChecklistsPage() {
 
         <section className="rounded-2xl border border-white/80 bg-white/85 p-4 shadow-sm backdrop-blur-xl">
           <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
-            <label className="relative block">
+            <label className="relative hidden md:block">
               <span className="sr-only">Cari riwayat checklist</span>
               <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
               <input
@@ -205,7 +249,7 @@ export default function ChecklistsPage() {
             </label>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-2" aria-label="Filter status temuan">
+          <div className="-mx-1 mt-4 flex gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap" aria-label="Filter status temuan">
             {findingFilters.map((filter) => {
               const active = findingFilter === filter.value;
               return (
@@ -225,7 +269,8 @@ export default function ChecklistsPage() {
               );
             })}
           </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <button type="button" onClick={openMobileFilters} className="mt-4 flex min-h-12 w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-700 md:hidden"><span className="inline-flex items-center gap-2"><SlidersHorizontal className="h-4 w-4" /> Semua filter</span><span className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-500">{activeFilterCount} aktif</span></button>
+          <div className="mt-4 hidden gap-3 md:grid md:grid-cols-3">
             <label className="text-xs font-semibold text-slate-600">Aset
               <select value={assetFilter} onChange={(event) => setAssetFilter(event.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal">
                 <option value="semua">Semua aset</option>
@@ -246,6 +291,12 @@ export default function ChecklistsPage() {
             </label>
           </div>
         </section>
+
+        {activeFilterCount > 0 && <div className="-mt-3 flex gap-2 overflow-x-auto pb-1 md:hidden" aria-label="Filter checklist aktif">
+          {timeFilter !== "semua" && <button type="button" onClick={() => setTimeFilter("semua")} className="shrink-0 rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-800">{timeFilter.replaceAll("_", " ")} ×</button>}
+          {findingFilter !== "semua" && <button type="button" onClick={() => setFindingFilter("semua")} className="shrink-0 rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-800">{findingFilters.find((item) => item.value === findingFilter)?.label} ×</button>}
+          {(assetFilter !== "semua" || templateFilter !== "semua" || laboratoryFilter !== "semua") && <button type="button" onClick={() => { setAssetFilter("semua"); setTemplateFilter("semua"); setLaboratoryFilter("semua"); }} className="shrink-0 rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-800">Filter detail ×</button>}
+        </div>}
 
         {loading ? (
           <div className="flex min-h-48 items-center justify-center rounded-lg border border-slate-200 bg-white">
@@ -282,7 +333,7 @@ export default function ChecklistsPage() {
                     <Link
                       key={template.id}
                       href={`/checklists/new?checklistId=${template.id}`}
-                      className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+                      className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
                     >
                       <div className="flex items-start gap-3">
                         <div className="rounded-full bg-emerald-100 p-2">
@@ -386,6 +437,13 @@ export default function ChecklistsPage() {
           </>
         )}
       </div>
+      <MobileFilterSheet open={showMobileFilters} title="Filter checklist" resultCount={pendingMobileResultCount} onClose={() => setShowMobileFilters(false)} onReset={() => { setDraftFindingFilter("semua"); setDraftTimeFilter("semua"); setDraftAssetFilter("semua"); setDraftTemplateFilter("semua"); setDraftLaboratoryFilter("semua"); }} onApply={() => { setFindingFilter(draftFindingFilter); setTimeFilter(draftTimeFilter); setAssetFilter(draftAssetFilter); setTemplateFilter(draftTemplateFilter); setLaboratoryFilter(draftLaboratoryFilter); setShowMobileFilters(false); }}>
+        <label className="text-sm font-semibold text-slate-700">Status temuan<select value={draftFindingFilter} onChange={(event) => setDraftFindingFilter(event.target.value as FindingFilter)} className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm">{findingFilters.map((filter) => <option key={filter.value} value={filter.value}>{filter.label}</option>)}</select></label>
+        <label className="text-sm font-semibold text-slate-700">Periode<select value={draftTimeFilter} onChange={(event) => setDraftTimeFilter(event.target.value as TimeFilter)} className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"><option value="semua">Semua waktu</option><option value="hari_ini">Hari ini</option><option value="7_hari">7 hari terakhir</option><option value="30_hari">30 hari terakhir</option><option value="12_bulan">12 bulan terakhir</option></select></label>
+        <label className="text-sm font-semibold text-slate-700">Aset<select value={draftAssetFilter} onChange={(event) => setDraftAssetFilter(event.target.value)} className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"><option value="semua">Semua aset</option>{filterOptions.assets.map(([id, asset]) => asset && <option key={id} value={id ?? ""}>{asset.name} ({asset.code})</option>)}</select></label>
+        <label className="text-sm font-semibold text-slate-700">Template<select value={draftTemplateFilter} onChange={(event) => setDraftTemplateFilter(event.target.value)} className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"><option value="semua">Semua template</option>{filterOptions.templates.map(([id, template]) => template && <option key={id} value={id ?? ""}>{template.title}</option>)}</select></label>
+        <label className="text-sm font-semibold text-slate-700">Laboratorium<select value={draftLaboratoryFilter} onChange={(event) => setDraftLaboratoryFilter(event.target.value)} className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"><option value="semua">Semua laboratorium</option>{filterOptions.laboratories.map(([id, laboratory]) => laboratory && <option key={id} value={id ?? ""}>{laboratory.name}</option>)}</select></label>
+      </MobileFilterSheet>
     </AppShell>
   );
 }

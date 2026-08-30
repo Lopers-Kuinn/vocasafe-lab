@@ -195,6 +195,10 @@ export default function AssetDetailPage() {
         asset.laboratoryId,
       )
     : false;
+  const canCreateReport = Boolean(currentUser && currentUser.role !== "kepala_lab");
+  const canCreateChecklist = Boolean(
+    currentUser && ["dosen", "teknisi", "admin"].includes(currentUser.role),
+  );
 
   return (
     <AppShell>
@@ -205,6 +209,21 @@ export default function AssetDetailPage() {
         >
           <ArrowLeft className="h-4 w-4" /> Kembali
         </Link>
+
+        <section className={`rounded-[26px] border p-5 shadow-sm md:hidden ${asset.operationalState === "aktif" && asset.status === "layak" ? "border-emerald-200 bg-emerald-50" : "border-red-200 bg-red-50"}`}>
+          <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Keputusan sebelum digunakan</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className={`rounded-full px-3 py-1 text-xs font-bold ${statusColors[asset.status]}`}>{statusLabels[asset.status]}</span>
+            <span className={`rounded-full px-3 py-1 text-xs font-bold ${asset.operationalState === "aktif" ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>{asset.operationalState.replaceAll("_", " ")}</span>
+          </div>
+          <h1 className="mt-4 break-words text-2xl font-bold tracking-[-0.03em] text-slate-950">{asset.name}</h1>
+          <p className="mt-1 text-sm text-slate-600">{asset.code} · {asset.location || "Lokasi belum ditentukan"}</p>
+          {asset.operationalState !== "aktif" && <p className="mt-4 rounded-2xl bg-white/75 p-3 text-sm font-semibold leading-5 text-red-800">Jangan gunakan aset hingga pembatasan dicabut oleh petugas berwenang.</p>}
+          <div className="mt-4 grid gap-2 min-[380px]:grid-cols-2">
+            {canCreateReport && <Link href={`/reports/new?assetId=${encodeURIComponent(asset.code)}`} className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-red-700 px-4 text-sm font-bold text-white"><AlertTriangle className="h-4 w-4" /> Laporkan bahaya</Link>}
+            {canCreateChecklist && <Link href={`/checklists/new?assetId=${encodeURIComponent(asset.code)}`} className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-emerald-300 bg-white px-4 text-sm font-bold text-emerald-800">Isi checklist</Link>}
+          </div>
+        </section>
 
         <div id="sop-digital" className="min-w-0 scroll-mt-24 overflow-hidden rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
@@ -302,13 +321,13 @@ export default function AssetDetailPage() {
             </p>
           )}
 
-          <div className="mt-6 flex flex-wrap gap-2">
-            <Link
+          <div className="mt-6 hidden flex-wrap gap-2 md:flex">
+            {canCreateReport && <Link
               href={`/reports/new?assetId=${encodeURIComponent(asset.code)}`}
               className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100 min-[420px]:w-auto"
             >
               <AlertTriangle className="h-4 w-4" /> Laporkan Bahaya
-            </Link>
+            </Link>}
           </div>
         </div>
 

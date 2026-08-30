@@ -6,9 +6,12 @@ import { useSearchParams } from "next/navigation";
 import {
   AlertCircle,
   ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle2,
   FileImage,
   Loader2,
+  Save,
   Send,
 } from "lucide-react";
 import AppShell from "@/components/AppShell";
@@ -25,6 +28,68 @@ import type { ChecklistAnswer } from "@/types";
 interface AnswerState {
   answer: ChecklistAnswer;
   note: string;
+}
+
+const CHECKLIST_DRAFT_KEY = "vocasafe_checklist_draft_v1";
+
+interface ChecklistDraft {
+  templateId: string;
+  selectedAssetId: string;
+  responses: Record<string, AnswerState>;
+  overallNote: string;
+  hasRiskFinding: boolean;
+  severity: number;
+  probability: number;
+  exposure: number;
+  measurements: Record<string, string>;
+  inspectorAttestation: boolean;
+  mobilePhase: 1 | 2 | 3;
+  mobileItemIndex: number;
+}
+
+function readChecklistDraft(): ChecklistDraft | null {
+  try {
+    const rawDraft = window.localStorage.getItem(CHECKLIST_DRAFT_KEY);
+    if (!rawDraft) return null;
+
+    const value = JSON.parse(rawDraft) as Partial<ChecklistDraft>;
+    if (!value || typeof value !== "object") return null;
+
+    const scaleValue = (input: unknown) =>
+      typeof input === "number" && input >= 0 && input <= 5 ? input : 0;
+
+    return {
+      templateId: typeof value.templateId === "string" ? value.templateId : "",
+      selectedAssetId:
+        typeof value.selectedAssetId === "string" ? value.selectedAssetId : "",
+      responses:
+        value.responses && typeof value.responses === "object"
+          ? value.responses
+          : {},
+      overallNote:
+        typeof value.overallNote === "string" ? value.overallNote : "",
+      hasRiskFinding: value.hasRiskFinding === true,
+      severity: scaleValue(value.severity),
+      probability: scaleValue(value.probability),
+      exposure: scaleValue(value.exposure),
+      measurements:
+        value.measurements && typeof value.measurements === "object"
+          ? value.measurements
+          : {},
+      inspectorAttestation: value.inspectorAttestation === true,
+      mobilePhase:
+        value.mobilePhase === 2 || value.mobilePhase === 3
+          ? value.mobilePhase
+          : 1,
+      mobileItemIndex:
+        typeof value.mobileItemIndex === "number" && value.mobileItemIndex >= 0
+          ? Math.floor(value.mobileItemIndex)
+          : 0,
+    };
+  } catch {
+    window.localStorage.removeItem(CHECKLIST_DRAFT_KEY);
+    return null;
+  }
 }
 
 const answerOptions: { value: ChecklistAnswer; label: string }[] = [
@@ -78,6 +143,9 @@ function ChecklistForm() {
   const [error, setError] = useState("");
   const [createdResultId, setCreatedResultId] = useState("");
   const [submissionWarning, setSubmissionWarning] = useState("");
+  const [mobilePhase, setMobilePhase] = useState<1 | 2 | 3>(1);
+  const [mobileItemIndex, setMobileItemIndex] = useState(0);
+  const draftReadyRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -96,7 +164,14 @@ function ChecklistForm() {
           return;
         }
 
+        const draft = readChecklistDraft();
         let initialTemplate = templateResult.templates[0] ?? null;
+        if (draft?.templateId && !presetTemplateId) {
+          initialTemplate =
+            templateResult.templates.find(
+              (template) => template.id === draft.templateId,
+            ) ?? initialTemplate;
+        }
         if (presetTemplateId) {
           const matchedTemplate = templateResult.templates.find(
             (template) => template.id === presetTemplateId,
@@ -110,7 +185,45 @@ function ChecklistForm() {
           }
         }
 
-        if (initialTemplate) setActiveTemplate(initialTemplate);
+        if (initialTemplate) {
+          setActiveTemplate(initialTemplate);
+
+          if (draft?.templateId === initialTemplate.id) {
+            const itemIds = new Set(initialTemplate.items.map((item) => item.id));
+            const restoredResponses = Object.fromEntries(
+              Object.entries(draft.responses).filter(
+                ([itemId, response]) =>
+                  itemIds.has(itemId) &&
+                  (response.answer === "ya" ||
+                    response.answer === "tidak" ||
+                    response.answer === "tidak_berlaku") &&
+                  typeof response.note === "string",
+              ),
+            );
+            const restoredMeasurements = Object.fromEntries(
+              Object.entries(draft.measurements).filter(
+                ([itemId, measurement]) =>
+                  itemIds.has(itemId) && typeof measurement === "string",
+              ),
+            );
+
+            setResponses(restoredResponses);
+            setMeasurements(restoredMeasurements);
+            setOverallNote(draft.overallNote);
+            setHasRiskFinding(draft.hasRiskFinding);
+            setSeverity(draft.severity);
+            setProbability(draft.probability);
+            setExposure(draft.exposure);
+            setInspectorAttestation(draft.inspectorAttestation);
+            setMobilePhase(draft.mobilePhase);
+            setMobileItemIndex(
+              Math.min(
+                draft.mobileItemIndex,
+                Math.max(0, initialTemplate.items.length - 1),
+              ),
+            );
+          }
+        }
 
         if (presetAssetId) {
           const matchedAsset = assetResult.assets.find(
@@ -127,7 +240,20 @@ function ChecklistForm() {
                 .join(" "),
             );
           }
+        } else if (draft?.selectedAssetId) {
+          const draftAsset = assetResult.assets.find(
+            (asset) => asset.id === draft.selectedAssetId,
+          );
+          if (
+            draftAsset &&
+            (!initialTemplate?.assetKind ||
+              initialTemplate.assetKind === draftAsset.kind)
+          ) {
+            setSelectedAssetId(draftAsset.id);
+          }
         }
+
+        draftReadyRef.current = true;
       },
     );
 
@@ -150,6 +276,89 @@ function ChecklistForm() {
   const riskPreview = riskFindingActive && riskFactorsComplete
     ? calculateRiskScore({ severity, probability, exposure })
     : null;
+
+  useEffect(() => {
+    if (!draftReadyRef.current || loading || createdResultId) return;
+
+    const draft: ChecklistDraft = {
+      templateId: activeTemplate?.id ?? "",
+      selectedAssetId,
+      responses,
+      overallNote,
+      hasRiskFinding,
+      severity,
+      probability,
+      exposure,
+      measurements,
+      inspectorAttestation,
+      mobilePhase,
+      mobileItemIndex,
+    };
+
+    window.localStorage.setItem(CHECKLIST_DRAFT_KEY, JSON.stringify(draft));
+  }, [
+    activeTemplate?.id,
+    createdResultId,
+    exposure,
+    hasRiskFinding,
+    inspectorAttestation,
+    loading,
+    measurements,
+    mobileItemIndex,
+    mobilePhase,
+    overallNote,
+    probability,
+    responses,
+    selectedAssetId,
+    severity,
+  ]);
+
+  function validateCurrentMobileItem() {
+    const item = checklistItems[mobileItemIndex];
+    if (!item) return true;
+    const response = responses[item.id];
+    if (!response) {
+      setError(`Jawab item ${mobileItemIndex + 1} sebelum melanjutkan.`);
+      return false;
+    }
+    if (response.answer === "tidak" && !response.note.trim()) {
+      setError("Catatan wajib diisi untuk jawaban Tidak.");
+      return false;
+    }
+    if (
+      response.answer === "tidak" &&
+      (item.isCritical || item.evidenceRequired) &&
+      !evidenceFiles[item.id]
+    ) {
+      setError("Foto bukti wajib untuk temuan kritis ini.");
+      return false;
+    }
+    return true;
+  }
+
+  function advanceChecklistMobile() {
+    setError("");
+    if (mobilePhase === 1) {
+      if (!activeTemplate?.id) {
+        setError("Template checklist aktif tidak ditemukan.");
+        return;
+      }
+      if (!selectedAssetId || !selectedAsset) {
+        setError("Pilih aset terlebih dahulu.");
+        return;
+      }
+      setMobilePhase(2);
+      setMobileItemIndex(0);
+    } else if (mobilePhase === 2) {
+      if (!validateCurrentMobileItem()) return;
+      if (mobileItemIndex < checklistItems.length - 1) {
+        setMobileItemIndex((current) => current + 1);
+      } else {
+        setMobilePhase(3);
+      }
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   function handleTemplateChange(nextTemplateId: string) {
     const nextTemplate = templates.find(
@@ -196,22 +405,27 @@ function ChecklistForm() {
     setError("");
 
     if (!activeTemplate?.id) {
+      setMobilePhase(1);
       setError("Template checklist aktif tidak ditemukan.");
       return;
     }
 
     if (checklistItems.length === 0) {
+      setMobilePhase(1);
       setError("Item checklist belum tersedia.");
       return;
     }
 
     if (!selectedAssetId || !selectedAsset) {
+      setMobilePhase(1);
       setError("Pilih aset terlebih dahulu.");
       return;
     }
 
     const unanswered = checklistItems.filter((item) => !responses[item.id]);
     if (unanswered.length > 0) {
+      setMobilePhase(2);
+      setMobileItemIndex(Math.max(0, checklistItems.findIndex((item) => !responses[item.id])));
       setError(`${unanswered.length} item checklist belum dijawab.`);
       return;
     }
@@ -222,6 +436,8 @@ function ChecklistForm() {
         !responses[item.id]?.note.trim(),
     );
     if (negativeWithoutNote) {
+      setMobilePhase(2);
+      setMobileItemIndex(Math.max(0, checklistItems.findIndex((item) => responses[item.id]?.answer === "tidak" && !responses[item.id]?.note.trim())));
       setError("Catatan wajib diisi untuk setiap jawaban Tidak.");
       return;
     }
@@ -233,16 +449,20 @@ function ChecklistForm() {
         !evidenceFiles[item.id],
     );
     if (criticalWithoutEvidence) {
+      setMobilePhase(2);
+      setMobileItemIndex(Math.max(0, checklistItems.findIndex((item) => responses[item.id]?.answer === "tidak" && (item.isCritical || item.evidenceRequired) && !evidenceFiles[item.id])));
       setError("Foto bukti wajib untuk setiap temuan kritis.");
       return;
     }
 
     if (riskFindingActive && !riskFactorsComplete) {
+      setMobilePhase(3);
       setError("Pilih severity, probability, dan exposure untuk temuan risiko.");
       return;
     }
 
     if (!inspectorAttestation) {
+      setMobilePhase(3);
       setError("Konfirmasi pernyataan pemeriksa sebelum menyimpan checklist.");
       return;
     }
@@ -287,6 +507,7 @@ function ChecklistForm() {
       ].filter(Boolean);
       setSubmissionWarning(warnings.join(" "));
       setCreatedResultId(result.resultId ?? "saved");
+      window.localStorage.removeItem(CHECKLIST_DRAFT_KEY);
       setSubmitting(false);
       return;
     }
@@ -298,6 +519,7 @@ function ChecklistForm() {
     }
 
     setCreatedResultId(result.resultId ?? "saved");
+    window.localStorage.removeItem(CHECKLIST_DRAFT_KEY);
     setSubmitting(false);
   }
 
@@ -315,6 +537,9 @@ function ChecklistForm() {
     setError("");
     setSubmissionWarning("");
     setCreatedResultId("");
+    setMobilePhase(1);
+    setMobileItemIndex(0);
+    window.localStorage.removeItem(CHECKLIST_DRAFT_KEY);
   }
 
   if (createdResultId) {
@@ -405,7 +630,19 @@ function ChecklistForm() {
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-6">
-            <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <section className="rounded-[24px] border border-emerald-100 bg-white/90 p-4 shadow-sm md:hidden" aria-label="Progres checklist">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">Tahap {mobilePhase} dari 3</p>
+                  <p className="mt-1 text-sm font-bold text-slate-950">{mobilePhase === 1 ? "Persiapan inspeksi" : mobilePhase === 2 ? `Pemeriksaan ${Math.min(mobileItemIndex + 1, checklistItems.length)} dari ${checklistItems.length}` : "Temuan & konfirmasi"}</p>
+                </div>
+                <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">{mobilePhase === 1 ? "33%" : mobilePhase === 2 ? `${Math.round(((mobileItemIndex + 1) / Math.max(1, checklistItems.length)) * 66)}%` : "100%"}</span>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-600 transition-[width] duration-300" style={{ width: mobilePhase === 1 ? "33%" : mobilePhase === 2 ? `${33 + ((mobileItemIndex + 1) / Math.max(1, checklistItems.length)) * 34}%` : "100%" }} /></div>
+              <p className="mt-3 flex items-center gap-1.5 text-[10px] font-semibold text-slate-500"><Save className="h-3.5 w-3.5 text-emerald-700" /> Draft tersimpan otomatis di perangkat ini</p>
+            </section>
+
+            <section className={`${mobilePhase === 1 ? "block" : "hidden md:block"} space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6`}>
               <div>
                 <label
                   htmlFor="checklist-template"
@@ -481,7 +718,7 @@ function ChecklistForm() {
             </section>
 
             {activeTemplate && (
-              <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+              <section className={`${mobilePhase === 2 ? "block" : "hidden md:block"} space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6`}>
                 <div>
                   <h2 className="text-lg font-semibold text-slate-900">
                     {activeTemplate.title}
@@ -501,7 +738,7 @@ function ChecklistForm() {
                   return (
                     <fieldset
                       key={item.id}
-                      className={`rounded-md border p-4 ${
+                      className={`${mobileItemIndex === index ? "block" : "hidden md:block"} rounded-2xl border p-4 ${
                         item.isCritical
                           ? "border-red-200 bg-red-50/40"
                           : "border-slate-200"
@@ -516,11 +753,11 @@ function ChecklistForm() {
                         </p>
                       )}
 
-                      <div className="grid gap-2 sm:grid-cols-3">
+                      <div className="grid gap-2 min-[380px]:grid-cols-3">
                         {answerOptions.map((option) => (
                           <label
                             key={option.value}
-                            className={`flex min-h-10 cursor-pointer items-center justify-center rounded-md border px-3 py-2 text-xs font-medium transition-colors ${
+                            className={`flex min-h-12 cursor-pointer items-center justify-center rounded-xl border px-3 py-2 text-xs font-bold transition-colors ${
                               response?.answer === option.value
                                 ? option.value === "ya"
                                   ? "border-green-600 bg-green-600 text-white"
@@ -615,10 +852,14 @@ function ChecklistForm() {
                     </fieldset>
                   );
                 })}
+
+                <div className="rounded-2xl bg-slate-50 p-3 text-xs text-slate-600 md:hidden">
+                  {Object.keys(responses).length} dari {checklistItems.length} item telah dijawab. Jawaban dapat ditinjau kembali dengan tombol Kembali.
+                </div>
               </section>
             )}
 
-            <section className="space-y-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <section className={`${mobilePhase === 3 ? "block" : "hidden md:block"} space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6`}>
               <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
                 <input
                   type="checkbox"
@@ -710,7 +951,7 @@ function ChecklistForm() {
               )}
             </section>
 
-            <label className="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
+            <label className={`${mobilePhase === 3 ? "flex" : "hidden md:flex"} items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950`}>
               <input
                 type="checkbox"
                 checked={inspectorAttestation}
@@ -723,7 +964,7 @@ function ChecklistForm() {
               </span>
             </label>
 
-            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <section className={`${mobilePhase === 3 ? "block" : "hidden md:block"} rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6`}>
               <label
                 htmlFor="overall-note"
                 className="mb-1 block text-sm font-medium text-slate-700"
@@ -752,7 +993,7 @@ function ChecklistForm() {
             <button
               type="submit"
               disabled={submitting}
-              className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-400"
+              className="hidden min-h-12 w-full items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-400 md:inline-flex"
             >
               {submitting ? (
                 <>
@@ -764,6 +1005,23 @@ function ChecklistForm() {
                 </>
               )}
             </button>
+
+            <div className="sticky bottom-[calc(6.8rem+env(safe-area-inset-bottom))] z-30 -mx-2 flex gap-2 rounded-[22px] border border-slate-200/80 bg-white/95 p-2 shadow-[0_14px_40px_rgba(15,23,42,0.18)] backdrop-blur-xl md:hidden">
+              {(mobilePhase > 1 || mobileItemIndex > 0) && (
+                <button type="button" onClick={() => { setError(""); if (mobilePhase === 3) { setMobilePhase(2); setMobileItemIndex(Math.max(0, checklistItems.length - 1)); } else if (mobilePhase === 2 && mobileItemIndex > 0) { setMobileItemIndex((current) => current - 1); } else { setMobilePhase(1); } window.scrollTo({ top: 0, behavior: "smooth" }); }} className="inline-flex min-h-12 flex-1 items-center justify-center gap-1 rounded-2xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700">
+                  <ChevronLeft className="h-4 w-4" /> Kembali
+                </button>
+              )}
+              {mobilePhase < 3 ? (
+                <button type="button" onClick={advanceChecklistMobile} className="inline-flex min-h-12 flex-[1.4] items-center justify-center gap-1 rounded-2xl bg-[#08775a] px-4 text-sm font-bold text-white shadow-lg">
+                  {mobilePhase === 2 && mobileItemIndex < checklistItems.length - 1 ? "Item berikutnya" : "Lanjutkan"} <ChevronRight className="h-4 w-4" />
+                </button>
+              ) : (
+                <button type="submit" disabled={submitting} className="inline-flex min-h-12 flex-[1.4] items-center justify-center gap-2 rounded-2xl bg-[#08775a] px-4 text-sm font-bold text-white shadow-lg disabled:opacity-60">
+                  {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Menyimpan...</> : <><Send className="h-4 w-4" /> Simpan</>}
+                </button>
+              )}
+            </div>
           </form>
         )}
       </div>
