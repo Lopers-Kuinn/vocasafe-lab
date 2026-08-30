@@ -445,7 +445,17 @@ export default function AuditPage() {
           </div>
         </section>
 
-        <section className="grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="grid grid-cols-2 gap-3 sm:hidden" aria-label="Ringkasan eksekutif audit">
+          {[
+            ["Risiko kritis", view.metrics.criticalRisks, "text-red-700 bg-red-50 border-red-200"],
+            ["Bahaya aktif", view.metrics.activeHazards, "text-red-700 bg-red-50 border-red-200"],
+            ["Tindakan terlambat", view.metrics.overdueActions, "text-amber-800 bg-amber-50 border-amber-200"],
+            ["Inspeksi terlambat", view.metrics.overdueInspections, "text-orange-800 bg-orange-50 border-orange-200"],
+          ].map(([label, value, tone]) => <article key={String(label)} className={`rounded-2xl border p-3 ${tone}`}><p className="text-[10px] font-bold uppercase tracking-wide">{label}</p><p className="mt-2 text-2xl font-black">{value}</p></article>)}
+          <a href="#temuan-prioritas" className="col-span-2 inline-flex min-h-11 items-center justify-center rounded-2xl bg-[#102c23] px-4 text-sm font-bold text-white">Lihat temuan prioritas</a>
+        </section>
+
+        <section className="hidden min-w-0 gap-3 sm:grid sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard label="Aset dalam cakupan" value={view.metrics.totalAssets} note={`${view.metrics.restrictedAssets} dibatasi/tidak layak`} icon={Package} tone={view.metrics.restrictedAssets ? "red" : "emerald"} />
           <MetricCard label="Laporan periode" value={view.metrics.totalReports} note={`${view.metrics.openReports} belum selesai`} icon={FileText} tone={view.metrics.openReports ? "amber" : "emerald"} />
           <MetricCard label="Checklist periode" value={view.metrics.totalChecklists} note={`${view.metrics.pendingInspectionReviews} peninjauan masih menunggu`} icon={ClipboardCheck} tone="sky" />
@@ -456,7 +466,7 @@ export default function AuditPage() {
           <MetricCard label="Perintah kerja terbuka" value={view.metrics.openWorkOrders} note={`${view.metrics.expiredCertificates} sertifikat kedaluwarsa`} icon={Wrench} tone={view.metrics.expiredCertificates ? "red" : "amber"} />
         </section>
 
-        <section className="grid min-w-0 gap-4 lg:grid-cols-2">
+        <section id="indikator-audit" className="grid min-w-0 scroll-mt-24 gap-4 lg:grid-cols-2">
           <div className="min-w-0 rounded-[1.5rem] border border-slate-200/80 bg-white/90 p-5 shadow-sm">
             <div className="flex items-center gap-2"><TrendingUp className="h-5 w-5 text-emerald-700" /><h2 className="font-bold text-slate-950">Leading indicators</h2></div>
             <p className="mt-1 text-xs text-slate-500">Rolling enam bulan sampai akhir periode audit agar indikator tidak bias oleh sampel 30 hari yang terlalu kecil.</p>
@@ -494,14 +504,24 @@ export default function AuditPage() {
           </div>
         </section>
 
-        <section className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <details className="rounded-[1.5rem] border border-slate-200 bg-white/90 p-4 shadow-sm md:hidden">
+          <summary className="cursor-pointer list-none text-sm font-bold text-slate-950">Lihat distribusi lengkap <span className="float-right text-emerald-700">+</span></summary>
+          <div className="mt-4 grid gap-3">
+            <DistributionCard title="Risiko laporan" entries={Object.entries(view.reportRisk).map(([risk, value]) => ({ label: riskLabels[risk as RiskLevel], value, color: risk === "kritis" ? "bg-red-500" : risk === "tinggi" ? "bg-orange-500" : risk === "sedang" ? "bg-amber-400" : "bg-emerald-500" }))} />
+            <DistributionCard title="Status laporan" entries={Object.entries(view.reportStatus).map(([status, value]) => ({ label: statusLabels[status as ReportStatus], value, color: status === "selesai" ? "bg-emerald-500" : status === "ditolak" ? "bg-slate-500" : status === "dalam_penanganan" ? "bg-orange-500" : "bg-sky-500" }))} />
+            <DistributionCard title="Risiko checklist" entries={Object.entries(view.checklistRisk).map(([risk, value]) => ({ label: riskLabels[risk as RiskLevel], value, color: risk === "kritis" ? "bg-red-500" : risk === "tinggi" ? "bg-orange-500" : risk === "sedang" ? "bg-amber-400" : "bg-emerald-500" }))} />
+            <DistributionCard title="Status aset" entries={Object.entries(view.assetStatus).map(([status, value]) => ({ label: status === "layak" ? "Layak" : status === "perlu_dicek" ? "Perlu dicek" : "Tidak layak", value, color: status === "layak" ? "bg-emerald-500" : status === "perlu_dicek" ? "bg-amber-400" : "bg-red-500" }))} />
+          </div>
+        </details>
+
+        <section className="hidden min-w-0 gap-4 md:grid md:grid-cols-2 xl:grid-cols-4">
           <DistributionCard title="Risiko laporan" entries={Object.entries(view.reportRisk).map(([risk, value]) => ({ label: riskLabels[risk as RiskLevel], value, color: risk === "kritis" ? "bg-red-500" : risk === "tinggi" ? "bg-orange-500" : risk === "sedang" ? "bg-amber-400" : "bg-emerald-500" }))} />
           <DistributionCard title="Status laporan" entries={Object.entries(view.reportStatus).map(([status, value]) => ({ label: statusLabels[status as ReportStatus], value, color: status === "selesai" ? "bg-emerald-500" : status === "ditolak" ? "bg-slate-500" : status === "dalam_penanganan" ? "bg-orange-500" : "bg-sky-500" }))} />
           <DistributionCard title="Risiko checklist" entries={Object.entries(view.checklistRisk).map(([risk, value]) => ({ label: riskLabels[risk as RiskLevel], value, color: risk === "kritis" ? "bg-red-500" : risk === "tinggi" ? "bg-orange-500" : risk === "sedang" ? "bg-amber-400" : "bg-emerald-500" }))} />
           <DistributionCard title="Status aset" entries={Object.entries(view.assetStatus).map(([status, value]) => ({ label: status === "layak" ? "Layak" : status === "perlu_dicek" ? "Perlu dicek" : "Tidak layak", value, color: status === "layak" ? "bg-emerald-500" : status === "perlu_dicek" ? "bg-amber-400" : "bg-red-500" }))} />
         </section>
 
-        <section className="min-w-0 rounded-[1.5rem] border border-slate-200/80 bg-white/95 p-5 shadow-sm sm:p-6">
+        <section id="temuan-prioritas" className="min-w-0 scroll-mt-24 rounded-[1.5rem] border border-slate-200/80 bg-white/95 p-5 shadow-sm sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-red-600">Perlu tindakan</p><h2 className="mt-1 text-xl font-black text-slate-950">Temuan prioritas</h2><p className="mt-1 text-sm text-slate-500">Mencakup bahaya aktif dan tindakan terbuka di seluruh cakupan; diurutkan berdasarkan klasifikasi dan tenggat.</p></div>
             <span className="rounded-full bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700">{view.priorityFindings.length} temuan</span>

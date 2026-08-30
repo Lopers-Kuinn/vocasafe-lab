@@ -361,6 +361,15 @@ textarea {
 }
 
 @media (max-width: 639px) {
+  .page-enter {
+    animation-duration: 280ms;
+  }
+
+  .page-enter > *,
+  .page-enter :where(section, article, form) {
+    animation: none;
+  }
+
   .page-enter :where(button, a, span, time) {
     min-width: 0;
     overflow-wrap: anywhere;
@@ -369,6 +378,14 @@ textarea {
   .page-enter :where(input, select, textarea) {
     width: 100%;
     min-width: 0;
+  }
+
+  .page-enter :where(input, select, textarea):focus {
+    transform: none;
+  }
+
+  .page-enter summary {
+    -webkit-tap-highlight-color: transparent;
   }
 }
 

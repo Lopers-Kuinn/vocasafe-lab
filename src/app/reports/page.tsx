@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, FileWarning, Loader2, MapPin, Plus, Search, ShieldAlert, Tag } from "lucide-react";
+import { AlertCircle, FileWarning, Loader2, MapPin, Plus, Search, ShieldAlert, SlidersHorizontal, Tag } from "lucide-react";
 import AppShell from "@/components/AppShell";
+import MobileFilterSheet from "@/components/mobile/MobileFilterSheet";
 import { fetchLaboratories, type LaboratorySummary } from "@/lib/assets";
 import {
   fetchReports,
@@ -12,6 +13,7 @@ import {
   type DatabaseReport,
 } from "@/lib/reports";
 import type { HazardCategory, ReportStatus, ReportType, RiskLevel } from "@/types";
+import { useViewStateMemory } from "@/lib/use-view-state-memory";
 
 const riskColors: Record<RiskLevel, string> = {
   rendah: "bg-green-100 text-green-800",
@@ -50,6 +52,11 @@ export default function ReportsPage() {
   const [typeFilter, setTypeFilter] = useState<"semua" | ReportType>("semua");
   const [categoryFilter, setCategoryFilter] = useState<"semua" | HazardCategory>("semua");
   const [search, setSearch] = useState("");
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [draftRiskFilter, setDraftRiskFilter] = useState<"semua" | RiskLevel>("semua");
+  const [draftLaboratoryFilter, setDraftLaboratoryFilter] = useState("semua");
+  const [draftTypeFilter, setDraftTypeFilter] = useState<"semua" | ReportType>("semua");
+  const [draftCategoryFilter, setDraftCategoryFilter] = useState<"semua" | HazardCategory>("semua");
 
   useEffect(() => {
     let active = true;
@@ -100,6 +107,37 @@ export default function ReportsPage() {
     [categoryFilter, laboratoryFilter, reports, riskFilter, search, typeFilter],
   );
 
+  const pendingMobileResultCount = useMemo(() => reports.filter((report) => {
+    const term = search.trim().toLowerCase();
+    const searchable = [report.title, report.description, report.location, report.asset?.name, report.asset?.code, report.laboratory?.name].filter(Boolean).join(" ").toLowerCase();
+    return (draftRiskFilter === "semua" || report.riskCategory === draftRiskFilter) &&
+      (draftLaboratoryFilter === "semua" || report.laboratoryId === draftLaboratoryFilter) &&
+      (draftTypeFilter === "semua" || report.reportType === draftTypeFilter) &&
+      (draftCategoryFilter === "semua" || report.hazardCategory === draftCategoryFilter) &&
+      (!term || searchable.includes(term));
+  }).length, [draftCategoryFilter, draftLaboratoryFilter, draftRiskFilter, draftTypeFilter, reports, search]);
+
+  const activeFilterCount = [riskFilter, laboratoryFilter, typeFilter, categoryFilter].filter((value) => value !== "semua").length;
+
+  function openMobileFilters() {
+    setDraftRiskFilter(riskFilter); setDraftLaboratoryFilter(laboratoryFilter);
+    setDraftTypeFilter(typeFilter); setDraftCategoryFilter(categoryFilter);
+    setShowMobileFilters(true);
+  }
+
+  useViewStateMemory(
+    "vocasafe_reports_list_view_v1",
+    { search, riskFilter, laboratoryFilter, typeFilter, categoryFilter },
+    (saved) => {
+      if (typeof saved.search === "string") setSearch(saved.search);
+      if (typeof saved.riskFilter === "string") setRiskFilter(saved.riskFilter as "semua" | RiskLevel);
+      if (typeof saved.laboratoryFilter === "string") setLaboratoryFilter(saved.laboratoryFilter);
+      if (typeof saved.typeFilter === "string") setTypeFilter(saved.typeFilter as "semua" | ReportType);
+      if (typeof saved.categoryFilter === "string") setCategoryFilter(saved.categoryFilter as "semua" | HazardCategory);
+    },
+    !loading,
+  );
+
   return (
     <AppShell>
       <div className="space-y-6">
@@ -124,7 +162,8 @@ export default function ReportsPage() {
             <Search className="pointer-events-none absolute bottom-3 left-3 h-4 w-4 text-slate-400" />
             <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Judul, deskripsi, aset, kode, atau lokasi" className="min-h-11 w-full rounded-xl border border-slate-200 bg-white py-2 pl-10 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" />
           </label>
-          <label className="relative block">
+          <button type="button" onClick={openMobileFilters} className="flex min-h-12 items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm font-semibold text-slate-700 sm:hidden"><span className="inline-flex items-center gap-2"><SlidersHorizontal className="h-4 w-4" /> Filter laporan</span><span className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-500">{activeFilterCount} aktif</span></button>
+          <label className="relative hidden sm:block">
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
               Tingkat bahaya
             </span>
@@ -144,7 +183,7 @@ export default function ReportsPage() {
             </select>
           </label>
 
-          <label className="relative block">
+          <label className="relative hidden sm:block">
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Jenis laporan</span>
             <Tag className="pointer-events-none absolute bottom-3 left-3 h-4 w-4 text-slate-400" />
             <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as "semua" | ReportType)} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white py-2 pl-10 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">
@@ -153,7 +192,7 @@ export default function ReportsPage() {
             </select>
           </label>
 
-          <label className="relative block">
+          <label className="relative hidden sm:block">
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Kategori bahaya</span>
             <ShieldAlert className="pointer-events-none absolute bottom-3 left-3 h-4 w-4 text-slate-400" />
             <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value as "semua" | HazardCategory)} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white py-2 pl-10 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100">
@@ -162,7 +201,7 @@ export default function ReportsPage() {
             </select>
           </label>
 
-          <label className="relative block">
+          <label className="relative hidden sm:block">
             <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
               Lokasi laboratorium
             </span>
@@ -181,6 +220,13 @@ export default function ReportsPage() {
             </select>
           </label>
         </section>
+
+        {activeFilterCount > 0 && <div className="-mt-3 flex gap-2 overflow-x-auto pb-1 sm:hidden" aria-label="Filter laporan aktif">
+          {riskFilter !== "semua" && <button type="button" onClick={() => setRiskFilter("semua")} className="shrink-0 rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-800">{capitalize(riskFilter)} ×</button>}
+          {typeFilter !== "semua" && <button type="button" onClick={() => setTypeFilter("semua")} className="shrink-0 rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-800">{REPORT_TYPE_LABELS[typeFilter]} ×</button>}
+          {categoryFilter !== "semua" && <button type="button" onClick={() => setCategoryFilter("semua")} className="shrink-0 rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-800">{HAZARD_CATEGORY_LABELS[categoryFilter]} ×</button>}
+          {laboratoryFilter !== "semua" && <button type="button" onClick={() => setLaboratoryFilter("semua")} className="shrink-0 rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-800">{laboratories.find((item) => item.id === laboratoryFilter)?.name ?? "Laboratorium"} ×</button>}
+        </div>}
 
         {loading ? (
           <div className="flex min-h-48 items-center justify-center rounded-lg border border-slate-200 bg-white">
@@ -253,6 +299,12 @@ export default function ReportsPage() {
           </div>
         )}
       </div>
+      <MobileFilterSheet open={showMobileFilters} title="Filter laporan" resultCount={pendingMobileResultCount} onClose={() => setShowMobileFilters(false)} onReset={() => { setDraftRiskFilter("semua"); setDraftLaboratoryFilter("semua"); setDraftTypeFilter("semua"); setDraftCategoryFilter("semua"); }} onApply={() => { setRiskFilter(draftRiskFilter); setLaboratoryFilter(draftLaboratoryFilter); setTypeFilter(draftTypeFilter); setCategoryFilter(draftCategoryFilter); setShowMobileFilters(false); }}>
+        <label className="text-sm font-semibold text-slate-700">Tingkat bahaya<select value={draftRiskFilter} onChange={(event) => setDraftRiskFilter(event.target.value as "semua" | RiskLevel)} className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"><option value="semua">Semua tingkat risiko</option><option value="kritis">Kritis</option><option value="tinggi">Tinggi</option><option value="sedang">Sedang</option><option value="rendah">Rendah</option></select></label>
+        <label className="text-sm font-semibold text-slate-700">Jenis laporan<select value={draftTypeFilter} onChange={(event) => setDraftTypeFilter(event.target.value as "semua" | ReportType)} className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"><option value="semua">Semua jenis laporan</option>{Object.entries(REPORT_TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <label className="text-sm font-semibold text-slate-700">Kategori bahaya<select value={draftCategoryFilter} onChange={(event) => setDraftCategoryFilter(event.target.value as "semua" | HazardCategory)} className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"><option value="semua">Semua kategori</option>{Object.entries(HAZARD_CATEGORY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+        <label className="text-sm font-semibold text-slate-700">Laboratorium<select value={draftLaboratoryFilter} onChange={(event) => setDraftLaboratoryFilter(event.target.value)} className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"><option value="semua">Semua laboratorium</option>{laboratories.map((laboratory) => <option key={laboratory.id} value={laboratory.id}>{laboratory.name}</option>)}</select></label>
+      </MobileFilterSheet>
     </AppShell>
   );
 }
