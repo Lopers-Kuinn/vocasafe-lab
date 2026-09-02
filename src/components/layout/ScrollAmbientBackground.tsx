@@ -33,9 +33,10 @@ export default function ScrollAmbientBackground() {
     let width = 1;
     let height = 1;
     let animationFrameId: number | null = null;
+    let animationTimerId: number | null = null;
     let scrollFrameId: number | null = null;
     let lastFrameAt = performance.now();
-    let lastDrawAt = 0;
+    let sceneWasActive = true;
     let pointerX = width / 2;
     let pointerY = height / 2;
     let pointerMovedAt = 0;
@@ -211,18 +212,37 @@ export default function ScrollAmbientBackground() {
       if (reduceMotion) drawGrid(0, false);
     };
 
+    const scheduleFrame = (delay = 0) => {
+      if (
+        reduceMotion ||
+        document.hidden ||
+        animationFrameId !== null ||
+        animationTimerId !== null
+      ) {
+        return;
+      }
+
+      if (delay <= 0) {
+        animationFrameId = window.requestAnimationFrame(drawFrame);
+        return;
+      }
+
+      animationTimerId = window.setTimeout(() => {
+        animationTimerId = null;
+        animationFrameId = window.requestAnimationFrame(drawFrame);
+      }, delay);
+    };
+
     const drawFrame = (now: number) => {
+      animationFrameId = null;
       const pointerIsRecent =
         hasFinePointer && now - pointerMovedAt < 650;
       const waveIsActive = now % WAVE_INTERVAL_MS < WAVE_DURATION_MS;
       const sceneIsActive =
         waveIsActive || pointerIsRecent || pointerStrength > 0.005;
-      const activeFrameRate = hasFinePointer ? 60 : 30;
-      const minimumFrameDuration = sceneIsActive
-        ? 1000 / activeFrameRate
-        : 1000 / 8;
+      const activeFrameRate = hasFinePointer ? 30 : 20;
 
-      if (now - lastDrawAt >= minimumFrameDuration) {
+      if (sceneIsActive || sceneWasActive) {
         const elapsedSeconds = Math.min((now - lastFrameAt) / 1000, 0.1);
         const targetStrength = pointerIsRecent ? 1 : 0;
         const smoothing = 1 - Math.exp(-elapsedSeconds * 8);
@@ -230,10 +250,10 @@ export default function ScrollAmbientBackground() {
 
         drawGrid(now, true);
         lastFrameAt = now;
-        lastDrawAt = now;
       }
 
-      animationFrameId = window.requestAnimationFrame(drawFrame);
+      sceneWasActive = sceneIsActive;
+      scheduleFrame(sceneIsActive ? 1000 / activeFrameRate : 250);
     };
 
     const handlePointerMove = (event: PointerEvent) => {
@@ -241,6 +261,11 @@ export default function ScrollAmbientBackground() {
       pointerX = event.clientX;
       pointerY = event.clientY;
       pointerMovedAt = performance.now();
+      if (animationTimerId !== null) {
+        window.clearTimeout(animationTimerId);
+        animationTimerId = null;
+        scheduleFrame();
+      }
     };
 
     const handlePointerLeave = () => {
@@ -252,12 +277,16 @@ export default function ScrollAmbientBackground() {
         window.cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
       }
+      if (animationTimerId !== null) {
+        window.clearTimeout(animationTimerId);
+        animationTimerId = null;
+      }
     };
 
     const startAnimation = () => {
       if (reduceMotion || animationFrameId !== null) return;
       lastFrameAt = performance.now();
-      animationFrameId = window.requestAnimationFrame(drawFrame);
+      scheduleFrame();
     };
 
     const handleVisibilityChange = () => {

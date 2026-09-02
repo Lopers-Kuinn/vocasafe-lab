@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { RotateCcw, SlidersHorizontal, X } from "lucide-react";
+import { useDialogFocus } from "@/lib/use-dialog-focus";
 
 const subscribeToNothing = () => () => undefined;
 const getClientSnapshot = () => true;
@@ -32,27 +33,27 @@ export default function MobileFilterSheet({
     getClientSnapshot,
     getServerSnapshot,
   );
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  useDialogFocus({ open, dialogRef, initialFocusRef: closeRef, onClose });
 
   useEffect(() => {
     if (!open) return;
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-
     return () => {
       document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [onClose, open]);
+  }, [open]);
 
   if (!mounted || !open) return null;
 
   return createPortal(
     <div
+      ref={dialogRef}
+      tabIndex={-1}
       className="fixed inset-0 z-[100] md:hidden"
       role="dialog"
       aria-modal="true"
@@ -60,6 +61,7 @@ export default function MobileFilterSheet({
     >
       <button
         type="button"
+        tabIndex={-1}
         aria-label="Tutup filter"
         onClick={onClose}
         className="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]"
@@ -78,10 +80,11 @@ export default function MobileFilterSheet({
             </div>
           </div>
           <button
+            ref={closeRef}
             type="button"
             onClick={onClose}
             aria-label="Tutup"
-            className="grid h-11 w-11 place-items-center rounded-2xl border border-slate-200 bg-white text-slate-600"
+            className="grid h-12 w-12 place-items-center rounded-2xl border border-slate-200 bg-white text-slate-600"
           >
             <X className="h-5 w-5" />
           </button>

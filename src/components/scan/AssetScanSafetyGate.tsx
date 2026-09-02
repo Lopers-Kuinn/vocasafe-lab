@@ -8,17 +8,19 @@ import {
   ClipboardCheck,
   FileWarning,
   MapPin,
+  PhoneCall,
   RotateCcw,
   ShieldAlert,
   ShieldCheck,
   Wrench,
 } from "lucide-react";
-import type { DatabaseAsset } from "@/lib/assets";
+import type { AssetContactSummary, DatabaseAsset } from "@/lib/assets";
 import type { AssetScanSafetySummary } from "@/lib/scan-safety";
 
 interface AssetScanSafetyGateProps {
   asset: DatabaseAsset;
   safety: AssetScanSafetySummary;
+  contact: AssetContactSummary | null;
   canCreateReport: boolean;
   canCreateChecklist: boolean;
   onReset: () => void;
@@ -26,22 +28,22 @@ interface AssetScanSafetyGateProps {
 
 const decisionPresentation = {
   clear: {
-    label: "Status tercatat layak digunakan",
+    label: "LAYAK DIGUNAKAN",
     description: "Gunakan aset sesuai SOP, APD, dan kewenangan operator.",
     icon: ShieldCheck,
     panel: "border-emerald-300 bg-emerald-50 text-emerald-950",
     badge: "bg-emerald-700 text-white",
   },
   restricted: {
-    label: "Penggunaan dibatasi",
-    description: "Periksa ketentuan dan minta konfirmasi laboran sebelum digunakan.",
+    label: "PERLU KONFIRMASI",
+    description: "Ada kondisi yang perlu diperiksa bersama laboran sebelum aset digunakan.",
     icon: AlertTriangle,
     panel: "border-amber-300 bg-amber-50 text-amber-950",
     badge: "bg-amber-500 text-amber-950",
   },
   blocked: {
-    label: "JANGAN DIGUNAKAN / LOTO",
-    description: "Hentikan penggunaan sampai aset dinyatakan aman oleh petugas berwenang.",
+    label: "JANGAN DIGUNAKAN",
+    description: "Ada kondisi K3 pemblokir. Hentikan penggunaan sampai aset dinyatakan aman oleh petugas berwenang.",
     icon: ShieldAlert,
     panel: "border-red-300 bg-red-50 text-red-950",
     badge: "bg-red-700 text-white",
@@ -54,6 +56,41 @@ const decisionPresentation = {
     badge: "bg-slate-800 text-white",
   },
 } as const;
+
+const assetStatusLabels: Record<DatabaseAsset["status"], string> = {
+  layak: "Layak",
+  perlu_dicek: "Perlu dicek",
+  tidak_layak: "Tidak layak",
+};
+
+const operationalStateLabels: Record<DatabaseAsset["operationalState"], string> = {
+  aktif: "Aktif",
+  penggunaan_dibatasi: "Penggunaan dibatasi",
+  dalam_perbaikan: "Dalam perbaikan",
+  dikarantina: "Dikarantina / LOTO",
+  dipensiunkan: "Dipensiunkan",
+};
+
+const decisionLabels: Record<AssetScanSafetySummary["decision"], string> = {
+  clear: "Boleh digunakan",
+  restricted: "Konfirmasi sebelum digunakan",
+  blocked: "Penggunaan dihentikan",
+  unverified: "Belum terverifikasi",
+};
+
+const statusTone: Record<DatabaseAsset["status"], string> = {
+  layak: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  perlu_dicek: "border-amber-200 bg-amber-50 text-amber-900",
+  tidak_layak: "border-red-200 bg-red-50 text-red-800",
+};
+
+const operationalTone: Record<DatabaseAsset["operationalState"], string> = {
+  aktif: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  penggunaan_dibatasi: "border-amber-200 bg-amber-50 text-amber-900",
+  dalam_perbaikan: "border-red-200 bg-red-50 text-red-800",
+  dikarantina: "border-red-300 bg-red-100 text-red-900",
+  dipensiunkan: "border-slate-300 bg-slate-100 text-slate-800",
+};
 
 function formatDate(value: string | null): string {
   if (!value) return "Belum tersedia";
@@ -68,6 +105,7 @@ function formatDate(value: string | null): string {
 export default function AssetScanSafetyGate({
   asset,
   safety,
+  contact,
   canCreateReport,
   canCreateChecklist,
   onReset,
@@ -100,7 +138,7 @@ export default function AssetScanSafetyGate({
           <button
             type="button"
             onClick={onReset}
-            className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-current/15 bg-white/70 px-4 py-2 text-sm font-bold hover:bg-white"
+            className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl border border-current/15 bg-white/70 px-4 py-2 text-sm font-bold hover:bg-white"
           >
             <RotateCcw className="h-4 w-4" /> Scan Aset Lain
           </button>
@@ -120,6 +158,20 @@ export default function AssetScanSafetyGate({
             <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
             <span>Inspeksi berikutnya: {formatDate(asset.nextInspectionAt)}</span>
           </p>
+          <div className="sm:col-span-2 grid gap-2 pt-1 sm:grid-cols-3">
+            <div className={`rounded-xl border px-3 py-2 ${statusTone[asset.status]}`}>
+              <p className="text-[10px] font-bold uppercase tracking-[0.1em] opacity-70">Kelayakan aset</p>
+              <p className="mt-1 text-sm font-black">{assetStatusLabels[asset.status]}</p>
+            </div>
+            <div className={`rounded-xl border px-3 py-2 ${operationalTone[asset.operationalState]}`}>
+              <p className="text-[10px] font-bold uppercase tracking-[0.1em] opacity-70">Status operasi</p>
+              <p className="mt-1 text-sm font-black">{operationalStateLabels[asset.operationalState]}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-800">
+              <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500">Keputusan saat scan</p>
+              <p className="mt-1 text-sm font-black">{decisionLabels[safety.decision]}</p>
+            </div>
+          </div>
         </div>
 
         <div className="mt-5 rounded-2xl border border-current/10 bg-white/55 p-4">
@@ -169,9 +221,17 @@ export default function AssetScanSafetyGate({
               <ClipboardCheck className="h-4 w-4" /> Mulai Checklist
             </Link>
           )}
+          {contact?.emergencyContactPhone && (
+            <a
+              href={`tel:${contact.emergencyContactPhone}`}
+              className={`inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border px-4 py-3 text-center text-sm font-bold ${safety.decision === "clear" ? "border-emerald-300 bg-white text-emerald-800 hover:bg-emerald-50" : "border-red-700 bg-red-700 text-white hover:bg-red-800"}`}
+            >
+              <PhoneCall className="h-4 w-4" /> Hubungi {contact.emergencyContactName ?? "Kontak Lab"}
+            </a>
+          )}
           {safety.decision !== "clear" && (
             <div className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-current/15 bg-white/50 px-4 py-3 text-center text-xs font-semibold">
-              <Wrench className="h-4 w-4 shrink-0" /> Hubungi PIC/laboran sebelum tindakan
+              <Wrench className="h-4 w-4 shrink-0" /> {contact?.picName ? `PIC: ${contact.picName}` : "Hubungi PIC/laboran sebelum tindakan"}
             </div>
           )}
         </div>

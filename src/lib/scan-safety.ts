@@ -63,14 +63,20 @@ function evaluateAssetSafety(
   if (asset.status === "tidak_layak") {
     blockingReasons.push("Status kelayakan aset tercatat Tidak Layak.");
   }
-  if (
-    ["dalam_perbaikan", "dikarantina", "dipensiunkan"].includes(
-      asset.operationalState,
-    )
-  ) {
+  if (asset.operationalState === "dalam_perbaikan") {
+    blockingReasons.push(
+      asset.isolationReason || "Aset sedang dalam perbaikan.",
+    );
+  }
+  if (asset.operationalState === "dikarantina") {
     blockingReasons.push(
       asset.isolationReason ||
-        "Aset sedang diperbaiki, dikarantina, atau sudah dipensiunkan.",
+        "Aset sedang dikarantina. Ikuti prosedur isolasi energi/LOTO yang berlaku.",
+    );
+  }
+  if (asset.operationalState === "dipensiunkan") {
+    blockingReasons.push(
+      asset.isolationReason || "Aset telah dipensiunkan dan tidak boleh dioperasikan.",
     );
   }
   if (inspectionOverdue) {

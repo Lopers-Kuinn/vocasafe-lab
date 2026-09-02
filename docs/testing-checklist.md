@@ -238,6 +238,10 @@ Gunakan checklist ini sebelum merge, deploy, presentasi, atau pengambilan screen
 
 ## 15. Release Gate
 
+- [ ] Real-user testing telah dilakukan mengikuti `docs/real-user-testing.md`.
+- [ ] Hasil, metrik, dan bukti tercatat di `docs/real-user-test-results.md` tanpa mengarang hasil.
+- [ ] Semua role minimum dan perangkat nyata yang diwajibkan telah tercakup.
+- [ ] Tidak ada Blocker/Critical usability, keselamatan, kehilangan data, duplikasi, atau isolasi akses.
 - [ ] Full manual browser QA lulus.
 - [ ] `npm run typecheck` lulus.
 - [ ] `npm run build` lulus.

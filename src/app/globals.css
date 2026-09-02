@@ -213,6 +213,16 @@ textarea {
   transform: translateY(-1px);
 }
 
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 3px solid #059669 !important;
+  outline-offset: 3px;
+}
+
+label:has(input:focus-visible) {
+  outline: 3px solid #059669 !important;
+  outline-offset: 3px;
+}
+
 .page-enter tbody tr {
   animation: row-reveal 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
   transition: background-color 180ms ease, transform 180ms ease;

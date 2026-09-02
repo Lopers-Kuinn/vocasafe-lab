@@ -6,6 +6,7 @@ import Link from "next/link";
 import {
   AlertCircle,
   ArrowLeft,
+  CalendarClock,
   CheckCircle2,
   Clock,
   EyeOff,
@@ -15,6 +16,7 @@ import {
   Save,
   ShieldCheck,
   Siren,
+  UserCheck,
   Users,
 } from "lucide-react";
 import AppShell from "@/components/AppShell";
@@ -23,11 +25,14 @@ import { canEditReportStatus } from "@/lib/role-access";
 import {
   fetchReportById,
   fetchReportFollowUps,
+  fetchReportResponseAssignees,
   HAZARD_CATEGORY_LABELS,
+  planReportResponse,
   REPORT_TYPE_LABELS,
   saveReportFollowUp,
   type DatabaseReport,
   type ReportFollowUp,
+  type ReportResponseAssignee,
 } from "@/lib/reports";
 import type { AppUser, ReportStatus, RiskLevel } from "@/types";
 
@@ -71,6 +76,21 @@ function formatFileSize(bytes: number | null): string {
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 }
 
+function toLocalDateTimeInput(value: string | null): string {
+  const date = value ? new Date(value) : new Date(Date.now() + 24 * 60 * 60 * 1000);
+  if (Number.isNaN(date.getTime())) return "";
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function formatOperationalDate(value: string | null): string {
+  if (!value) return "Belum ditetapkan";
+  return new Date(value).toLocaleString("id-ID", {
+    dateStyle: "long",
+    timeStyle: "short",
+  });
+}
+
 export default function ReportDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
@@ -89,6 +109,18 @@ export default function ReportDetailPage() {
   const [feedbackKind, setFeedbackKind] = useState<"success" | "error">(
     "success",
   );
+  const [assignees, setAssignees] = useState<ReportResponseAssignee[]>([]);
+  const [responseUnavailable, setResponseUnavailable] = useState(false);
+  const [responseError, setResponseError] = useState("");
+  const [responseAssigneeId, setResponseAssigneeId] = useState("");
+  const [responseDueAt, setResponseDueAt] = useState("");
+  const [responseNote, setResponseNote] = useState("");
+  const [responseSaving, setResponseSaving] = useState(false);
+  const [responseFeedback, setResponseFeedback] = useState("");
+  const [responseFeedbackKind, setResponseFeedbackKind] = useState<"success" | "error">(
+    "success",
+  );
+  const [currentTimestamp, setCurrentTimestamp] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -100,7 +132,11 @@ export default function ReportDetailPage() {
     ]).then(([result, followUpResult, profileResult]) => {
       if (!active) return;
       setReport(result.report);
-      if (result.report) setSelectedStatus(result.report.status);
+      if (result.report) {
+        setSelectedStatus(result.report.status);
+        setResponseAssigneeId(result.report.assignedTo ?? "");
+        setResponseDueAt(toLocalDateTimeInput(result.report.responseDueAt));
+      }
       setNotFound(!result.report && !result.error);
       setError(
         result.error
@@ -119,7 +155,21 @@ export default function ReportDetailPage() {
           : "",
       );
       setCurrentUser(profileResult.user);
+      setCurrentTimestamp(Date.now());
       setLoading(false);
+
+      if (
+        result.report &&
+        profileResult.user &&
+        canEditReportStatus(profileResult.user.role)
+      ) {
+        void fetchReportResponseAssignees(result.report.id).then((assigneeResult) => {
+          if (!active) return;
+          setAssignees(assigneeResult.assignees);
+          setResponseUnavailable(assigneeResult.unavailable);
+          setResponseError(assigneeResult.error ?? "");
+        });
+      }
     });
 
     return () => {
@@ -127,7 +177,80 @@ export default function ReportDetailPage() {
     };
   }, [id]);
 
+  useEffect(() => {
+    const interval = window.setInterval(() => setCurrentTimestamp(Date.now()), 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
+
   const canUpdate = currentUser ? canEditReportStatus(currentUser.role) : false;
+  const reportClosed = report?.status === "selesai" || report?.status === "ditolak";
+  const responseOverdue = Boolean(
+    report?.responseDueAt &&
+      !reportClosed &&
+      new Date(report.responseDueAt).getTime() < currentTimestamp,
+  );
+
+  async function handlePlanResponse(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setResponseFeedback("");
+
+    if (!report || !canUpdate || reportClosed) return;
+    if (!responseAssigneeId) {
+      setResponseFeedbackKind("error");
+      setResponseFeedback("Pilih PIC respons terlebih dahulu.");
+      return;
+    }
+    if (!responseDueAt) {
+      setResponseFeedbackKind("error");
+      setResponseFeedback("Tentukan tenggat respons terlebih dahulu.");
+      return;
+    }
+    if (responseNote.trim().length < 5) {
+      setResponseFeedbackKind("error");
+      setResponseFeedback("Catatan acknowledgement minimal 5 karakter.");
+      return;
+    }
+
+    setResponseSaving(true);
+    const saveResult = await planReportResponse({
+      reportId: report.id,
+      assigneeId: responseAssigneeId,
+      dueAt: responseDueAt,
+      note: responseNote,
+    });
+
+    if (saveResult.error) {
+      setResponseFeedbackKind("error");
+      setResponseFeedback(saveResult.error);
+      setResponseSaving(false);
+      return;
+    }
+
+    const [reportResult, followUpResult] = await Promise.all([
+      fetchReportById(report.id),
+      fetchReportFollowUps(report.id),
+    ]);
+    if (reportResult.report) {
+      setReport(reportResult.report);
+      setSelectedStatus(reportResult.report.status);
+      setResponseAssigneeId(reportResult.report.assignedTo ?? "");
+      setResponseDueAt(toLocalDateTimeInput(reportResult.report.responseDueAt));
+    }
+    setFollowUps(followUpResult.followUps);
+    setFollowUpError(
+      followUpResult.error
+        ? `Riwayat tindak lanjut tidak dapat dimuat: ${followUpResult.error}`
+        : "",
+    );
+    setResponseNote("");
+    setResponseFeedbackKind(reportResult.error ? "error" : "success");
+    setResponseFeedback(
+      reportResult.error
+        ? "Rencana tersimpan, tetapi detail laporan belum dapat dimuat ulang."
+        : "Laporan sudah diakui, PIC dan tenggat respons berhasil ditetapkan.",
+    );
+    setResponseSaving(false);
+  }
 
   async function handleSaveFollowUp(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -259,6 +382,147 @@ export default function ReportDetailPage() {
           <h1 className="mt-4 break-words text-xl font-bold tracking-[-0.03em] text-slate-950">{report.title}</h1>
           <p className="mt-2 text-sm leading-6 text-slate-700">{report.recommendation}</p>
           {report.hazardActive && report.status !== "selesai" && <p className="mt-4 rounded-2xl bg-white/80 p-3 text-sm font-semibold leading-5 text-red-800">Amankan area dan jangan melanjutkan aktivitas sampai petugas menyatakan kondisi aman.</p>}
+        </section>
+
+        <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.16em] text-emerald-700">
+                Operational Response
+              </p>
+              <h2 className="mt-1 flex items-center gap-2 text-lg font-bold text-slate-900">
+                <UserCheck className="h-5 w-5 text-emerald-600" /> Acknowledgement & PIC
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-slate-500">
+                Pastikan laporan memiliki penanggung jawab dan batas waktu respons yang jelas.
+              </p>
+            </div>
+            {responseOverdue && (
+              <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-red-100 px-3 py-1.5 text-xs font-bold text-red-800">
+                <CalendarClock className="h-3.5 w-3.5" /> Tenggat terlewati
+              </span>
+            )}
+          </div>
+
+          <dl className="mt-5 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Acknowledgement</dt>
+              <dd className="mt-2 text-sm font-semibold text-slate-800">
+                {report.acknowledgedAt ? "Sudah diakui" : "Belum diakui"}
+              </dd>
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                {report.acknowledgedAt
+                  ? formatOperationalDate(report.acknowledgedAt)
+                  : "Menunggu petugas menerima laporan."}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+              <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">PIC respons</dt>
+              <dd className="mt-2 break-words text-sm font-semibold text-slate-800">
+                {report.assignee?.fullName ?? "Belum ditetapkan"}
+              </dd>
+              {report.assignee && (
+                <p className="mt-1 text-xs capitalize text-slate-500">
+                  {report.assignee.role.replace("_", " ")}
+                </p>
+              )}
+            </div>
+            <div className={`rounded-2xl border p-4 ${responseOverdue ? "border-red-200 bg-red-50" : "border-slate-100 bg-slate-50"}`}>
+              <dt className={`text-[10px] font-bold uppercase tracking-wide ${responseOverdue ? "text-red-700" : "text-slate-500"}`}>Tenggat respons</dt>
+              <dd className={`mt-2 text-sm font-semibold ${responseOverdue ? "text-red-900" : "text-slate-800"}`}>
+                {formatOperationalDate(report.responseDueAt)}
+              </dd>
+            </div>
+          </dl>
+
+          {canUpdate && !reportClosed && (
+            <form onSubmit={handlePlanResponse} className="mt-6 space-y-4 border-t border-slate-200 pt-5">
+              <div>
+                <h3 className="font-bold text-slate-900">Akui dan rencanakan respons</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Penetapan ini tercatat sebagai tindak lanjut dan memberi notifikasi kepada PIC.
+                </p>
+              </div>
+
+              {responseUnavailable ? (
+                <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800">
+                  Operational Response siap digunakan setelah migration 015 diterapkan.
+                </p>
+              ) : (
+                <>
+                  {responseError && (
+                    <p role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                      {responseError}
+                    </p>
+                  )}
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <label className="text-sm font-semibold text-slate-700">
+                      PIC respons
+                      <select
+                        value={responseAssigneeId}
+                        onChange={(event) => setResponseAssigneeId(event.target.value)}
+                        required
+                        disabled={responseSaving || assignees.length === 0}
+                        className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:bg-slate-100"
+                      >
+                        <option value="">Pilih teknisi atau admin</option>
+                        {assignees.map((assignee) => (
+                          <option key={assignee.id} value={assignee.id}>
+                            {assignee.fullName} - {assignee.role === "teknisi" ? "Teknisi/Laboran" : "Admin"}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-sm font-semibold text-slate-700">
+                      Tenggat respons
+                      <input
+                        type="datetime-local"
+                        value={responseDueAt}
+                        onChange={(event) => setResponseDueAt(event.target.value)}
+                        min={toLocalDateTimeInput(new Date(currentTimestamp + 60_000).toISOString())}
+                        required
+                        disabled={responseSaving}
+                        className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:bg-slate-100"
+                      />
+                    </label>
+                  </div>
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Catatan acknowledgement
+                    <textarea
+                      value={responseNote}
+                      onChange={(event) => setResponseNote(event.target.value)}
+                      minLength={5}
+                      maxLength={1000}
+                      rows={3}
+                      required
+                      disabled={responseSaving}
+                      placeholder="Contoh: Laporan diterima. PIC akan mengisolasi area dan melakukan pemeriksaan awal."
+                      className="mt-2 w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm outline-none placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:bg-slate-100"
+                    />
+                  </label>
+
+                  {responseFeedback && (
+                    <p
+                      role={responseFeedbackKind === "error" ? "alert" : "status"}
+                      className={`flex items-start gap-2 rounded-2xl border p-4 text-sm ${responseFeedbackKind === "error" ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}
+                    >
+                      {responseFeedbackKind === "error" ? <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /> : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />}
+                      {responseFeedback}
+                    </p>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={responseSaving || !responseAssigneeId || !responseDueAt || responseNote.trim().length < 5}
+                    className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-bold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300 sm:w-auto"
+                  >
+                    {responseSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserCheck className="h-4 w-4" />}
+                    {responseSaving ? "Menyimpan rencana..." : "Akui & Tetapkan Respons"}
+                  </button>
+                </>
+              )}
+            </form>
+          )}
         </section>
 
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">

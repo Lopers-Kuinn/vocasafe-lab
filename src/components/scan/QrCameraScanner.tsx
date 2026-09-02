@@ -8,6 +8,7 @@ import {
   Loader2,
   RefreshCw,
   ScanLine,
+  SwitchCamera,
   Volume2,
 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
@@ -341,8 +342,14 @@ export default function QrCameraScanner({ onDecoded }: QrCameraScannerProps) {
     setMessage(failure.message);
   }
 
-  async function startCamera(): Promise<void> {
-    if (scannerRef.current || status === "requesting" || status === "active") {
+  async function startCamera(
+    preferredCameraId?: string,
+    forceAfterSwitch = false,
+  ): Promise<void> {
+    if (
+      scannerRef.current ||
+      (!forceAfterSwitch && (status === "requesting" || status === "active"))
+    ) {
       return;
     }
 
@@ -446,7 +453,10 @@ export default function QrCameraScanner({ onDecoded }: QrCameraScannerProps) {
       return;
     }
 
-    const selectedCamera = selectCamera(cameras, selectedCameraId);
+    const selectedCamera = selectCamera(
+      cameras,
+      preferredCameraId ?? selectedCameraId,
+    );
     setDetectedCameras(cameras);
     setSelectedCameraId(selectedCamera.id);
     setDebugInfo({
@@ -564,6 +574,23 @@ export default function QrCameraScanner({ onDecoded }: QrCameraScannerProps) {
     setTorchEnabled(false);
   }
 
+  async function switchCamera(): Promise<void> {
+    if (status !== "active" || detectedCameras.length < 2) return;
+
+    const currentIndex = detectedCameras.findIndex(
+      (camera) => camera.id === selectedCameraId,
+    );
+    const nextIndex =
+      currentIndex >= 0 ? (currentIndex + 1) % detectedCameras.length : 0;
+    const nextCamera = detectedCameras[nextIndex];
+
+    await stopCamera();
+    if (!mountedRef.current) return;
+
+    setSelectedCameraId(nextCamera.id);
+    await startCamera(nextCamera.id, true);
+  }
+
   async function toggleTorch(): Promise<void> {
     const scanner = scannerRef.current;
     if (!scanner?.isScanning || !torchAvailable) return;
@@ -669,7 +696,7 @@ export default function QrCameraScanner({ onDecoded }: QrCameraScannerProps) {
           type="button"
           onClick={() => void startCamera()}
           disabled={startDisabled}
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-400"
+          className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-400"
         >
           {status === "requesting" ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -686,15 +713,24 @@ export default function QrCameraScanner({ onDecoded }: QrCameraScannerProps) {
           type="button"
           onClick={() => void stopCamera()}
           disabled={!cameraRunning}
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+          className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
         >
           <CameraOff className="h-4 w-4" /> Hentikan Kamera
         </button>
+        {status === "active" && detectedCameras.length > 1 && (
+          <button
+            type="button"
+            onClick={() => void switchCamera()}
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-900 transition-colors hover:bg-emerald-100 sm:col-span-2"
+          >
+            <SwitchCamera className="h-4 w-4" /> Ganti Kamera
+          </button>
+        )}
         {cameraRunning && torchAvailable && (
           <button
             type="button"
             onClick={() => void toggleTorch()}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-900 transition-colors hover:bg-amber-100 sm:col-span-2"
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-900 transition-colors hover:bg-amber-100 sm:col-span-2"
           >
             <Flashlight className="h-4 w-4" />
             {torchEnabled ? "Matikan Lampu" : "Nyalakan Lampu"}

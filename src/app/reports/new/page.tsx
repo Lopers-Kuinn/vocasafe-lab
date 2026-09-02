@@ -7,12 +7,14 @@ import {
   AlertCircle,
   Ambulance,
   ArrowLeft,
+  Camera,
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
   Clock3,
   EyeOff,
   FileImage,
+  Images,
   Loader2,
   Save,
   Send,
@@ -34,6 +36,15 @@ import {
 } from "@/lib/reports";
 import { calculateRiskScore } from "@/lib/risk-scoring";
 import { getReportEvidenceBucket } from "@/lib/storage";
+import {
+  clearReportDraftEvidence,
+  isRetryableFieldError,
+  loadReportDraftEvidence,
+  prepareReportEvidence,
+  queueReportSubmission,
+  saveReportDraftEvidence,
+} from "@/lib/field-sync";
+import { optimizeEvidenceImage } from "@/lib/image-evidence";
 import type { HazardCategory, ReportType } from "@/types";
 
 type AIRecommendationProvider =
@@ -210,6 +221,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 interface ReportDraft {
+  submissionId: string;
   selectedAssetId: string;
   selectedLaboratoryId: string;
   reportType: ReportType;
@@ -326,6 +338,9 @@ function NewReportPage() {
   const [probability, setProbability] = useState<number | null>(null);
   const [exposure, setExposure] = useState<number | null>(null);
   const [evidenceFiles, setEvidenceFiles] = useState<File[]>([]);
+  const [optimizingEvidence, setOptimizingEvidence] = useState(false);
+  const [submissionId, setSubmissionId] = useState("");
+  const [submissionQueued, setSubmissionQueued] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [mobileStep, setMobileStep] = useState<1 | 2 | 3 | 4>(1);
@@ -343,17 +358,24 @@ function NewReportPage() {
   const aiContextFingerprintRef = useRef("");
   const aiLoadingRef = useRef(false);
   const draftReadyRef = useRef(false);
+  const evidenceReadyRef = useRef(false);
 
   useEffect(() => {
     let active = true;
 
-    void Promise.all([fetchAssets(), fetchLaboratories()]).then(
-      ([result, laboratoryResult]) => {
+    void Promise.all([
+      fetchAssets(),
+      fetchLaboratories(),
+      loadReportDraftEvidence(),
+    ]).then(
+      ([result, laboratoryResult, savedEvidence]) => {
         if (!active) return;
 
         setAssets(result.assets);
         setLaboratories(laboratoryResult.laboratories);
         setAssetsLoading(false);
+        setEvidenceFiles(savedEvidence);
+        evidenceReadyRef.current = true;
 
         if (result.error || laboratoryResult.error) {
           setAssetError(
@@ -366,6 +388,7 @@ function NewReportPage() {
 
         const draft = readReportDraft();
         if (draft) {
+          setSubmissionId(draft.submissionId || crypto.randomUUID());
           const draftAssetExists = result.assets.some((asset) => asset.id === draft.selectedAssetId);
           const draftLaboratoryExists = laboratoryResult.laboratories.some(
             (laboratory) => laboratory.id === draft.selectedLaboratoryId,
@@ -390,6 +413,8 @@ function NewReportPage() {
           setProbability(isScaleValue(draft.probability) ? draft.probability : null);
           setExposure(isScaleValue(draft.exposure) ? draft.exposure : null);
           setMobileStep([1, 2, 3, 4].includes(draft.mobileStep) ? draft.mobileStep : 1);
+        } else {
+          setSubmissionId(crypto.randomUUID());
         }
 
         if (!presetAsset) {
@@ -427,6 +452,7 @@ function NewReportPage() {
     if (!draftReadyRef.current || createdReportId) return;
 
     const draft: ReportDraft = {
+      submissionId,
       selectedAssetId,
       selectedLaboratoryId,
       reportType,
@@ -449,7 +475,14 @@ function NewReportPage() {
       mobileStep,
     };
     window.localStorage.setItem(REPORT_DRAFT_KEY, JSON.stringify(draft));
-  }, [activityAtTime, createdReportId, description, exposure, hazardActive, hazardCategory, immediateAction, injuryDetails, isConfidential, location, mobileStep, occurredAt, peopleAffected, picNotified, probability, reportType, selectedAssetId, selectedLaboratoryId, severity, title, witnessDetails]);
+  }, [activityAtTime, createdReportId, description, exposure, hazardActive, hazardCategory, immediateAction, injuryDetails, isConfidential, location, mobileStep, occurredAt, peopleAffected, picNotified, probability, reportType, selectedAssetId, selectedLaboratoryId, severity, submissionId, title, witnessDetails]);
+
+  useEffect(() => {
+    if (!evidenceReadyRef.current || createdReportId) return;
+    void saveReportDraftEvidence(evidenceFiles).catch(() => {
+      setError("Foto draft belum dapat disimpan di perangkat. Jangan tutup halaman sebelum laporan dikirim.");
+    });
+  }, [createdReportId, evidenceFiles]);
 
   useEffect(() => {
     return () => {
@@ -712,37 +745,80 @@ function NewReportPage() {
     invalidateAiState();
   }
 
-  function handleEvidenceChange(files: FileList | null, input: HTMLInputElement) {
+  async function handleEvidenceChange(files: FileList | null, input: HTMLInputElement) {
     setError("");
 
     if (!files || files.length === 0) {
-      setEvidenceFiles([]);
       return;
     }
 
-    const selectedFiles = Array.from(files);
-    if (selectedFiles.length > 3) {
-      setEvidenceFiles([]);
+    const newFiles = Array.from(files).filter(
+      (file, index, collection) =>
+        collection.findIndex(
+          (candidate) =>
+            candidate.name === file.name &&
+            candidate.size === file.size &&
+            candidate.lastModified === file.lastModified,
+        ) === index &&
+        !evidenceFiles.some(
+          (existing) =>
+            existing.name === file.name &&
+            existing.size === file.size &&
+            existing.lastModified === file.lastModified,
+        ),
+    );
+
+    if (evidenceFiles.length + newFiles.length > 3) {
       setError("Maksimal tiga foto bukti dapat dilampirkan.");
       input.value = "";
       return;
     }
 
-    const invalidFile = selectedFiles.find((file) => validateEvidenceFile(file));
-    if (invalidFile) {
-      setEvidenceFiles([]);
-      setError(`${invalidFile.name}: ${validateEvidenceFile(invalidFile)}`);
+    const unsupported = newFiles.find(
+      (file) => !["image/jpeg", "image/png", "image/webp"].includes(file.type),
+    );
+    if (unsupported) {
+      setError(`${unsupported.name}: Foto harus berformat JPG, PNG, atau WebP.`);
       input.value = "";
       return;
     }
 
-    setEvidenceFiles(selectedFiles);
+    const tooLarge = newFiles.find((file) => file.size > 20 * 1024 * 1024);
+    if (tooLarge) {
+      setError(`${tooLarge.name}: Ukuran foto mentah maksimal 20 MB.`);
+      input.value = "";
+      return;
+    }
+
+    setOptimizingEvidence(true);
+    try {
+      const optimizedFiles: File[] = [];
+      for (const file of newFiles) {
+        const optimized = await optimizeEvidenceImage(file);
+        const validationError = validateEvidenceFile(optimized.file);
+        if (validationError) {
+          setError(`${file.name}: ${validationError}`);
+          return;
+        }
+        optimizedFiles.push(optimized.file);
+      }
+      setEvidenceFiles((current) => [...current, ...optimizedFiles].slice(0, 3));
+    } finally {
+      setOptimizingEvidence(false);
+      input.value = "";
+    }
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     setAttachmentWarning("");
+
+    if (optimizingEvidence) {
+      setMobileStep(4);
+      setError("Tunggu hingga foto selesai disiapkan sebelum mengirim laporan.");
+      return;
+    }
 
     if (!selectedLaboratory) {
       setMobileStep(1);
@@ -795,21 +871,10 @@ function NewReportPage() {
 
     setSubmitting(true);
 
-    let storageBucket: string | null = null;
-    if (evidenceFiles.length > 0) {
-      const bucketResult = await getReportEvidenceBucket();
-      if (bucketResult.error || !bucketResult.bucket) {
-        setError(
-          bucketResult.error ??
-            "Layanan unggah foto sedang tidak tersedia. Hubungi administrator.",
-        );
-        setSubmitting(false);
-        return;
-      }
-      storageBucket = bucketResult.bucket;
-    }
-
-    const result = await createReport({
+    const activeSubmissionId = submissionId || crypto.randomUUID();
+    if (!submissionId) setSubmissionId(activeSubmissionId);
+    const submissionInput = {
+      submissionId: activeSubmissionId,
       assetId: selectedAsset?.id ?? null,
       laboratoryId: selectedLaboratory.id,
       title,
@@ -827,35 +892,96 @@ function NewReportPage() {
       witnessDetails,
       isConfidential,
       riskInput: { severity, probability, exposure },
-    });
+    };
+    const preparedEvidence = prepareReportEvidence(evidenceFiles);
+
+    if (!navigator.onLine) {
+      try {
+        await queueReportSubmission(submissionInput, preparedEvidence);
+        setSubmissionQueued(true);
+        setCreatedReportId(activeSubmissionId);
+        window.localStorage.removeItem(REPORT_DRAFT_KEY);
+        await clearReportDraftEvidence();
+      } catch (queueError) {
+        setError(
+          queueError instanceof Error
+            ? queueError.message
+            : "Antrean laporan tidak dapat disimpan di perangkat.",
+        );
+      }
+      setSubmitting(false);
+      return;
+    }
+
+    let storageBucket: string | null = null;
+    if (evidenceFiles.length > 0) {
+      const bucketResult = await getReportEvidenceBucket();
+      if (bucketResult.error || !bucketResult.bucket) {
+        setError(
+          bucketResult.error ??
+            "Layanan unggah foto sedang tidak tersedia. Hubungi administrator.",
+        );
+        setSubmitting(false);
+        return;
+      }
+      storageBucket = bucketResult.bucket;
+    }
+
+    const result = await createReport(submissionInput);
 
     if (result.error || !result.report || !result.reporterId) {
+      if (isRetryableFieldError(result.error)) {
+        try {
+          await queueReportSubmission(submissionInput, preparedEvidence);
+          setSubmissionQueued(true);
+          setCreatedReportId(activeSubmissionId);
+          window.localStorage.removeItem(REPORT_DRAFT_KEY);
+          await clearReportDraftEvidence();
+          setSubmitting(false);
+          return;
+        } catch {
+          // Keep the original network error and the draft for a manual retry.
+        }
+      }
       setError(result.error ?? "Laporan gagal disimpan. Silakan coba kembali.");
       setSubmitting(false);
       return;
     }
 
     if (evidenceFiles.length > 0 && storageBucket) {
-      const uploadResults = await Promise.all(
-        evidenceFiles.map((file) =>
-          uploadReportEvidence({
+      const completedEvidenceIds: string[] = [];
+      const uploadErrors: string[] = [];
+      for (const evidence of preparedEvidence) {
+        const uploadResult = await uploadReportEvidence({
             reportId: result.report!.id,
             reporterId: result.reporterId!,
             bucket: storageBucket,
-            file,
-          }),
-        ),
-      );
-      setAttachmentWarning(
-        uploadResults
-          .map((uploadResult) => uploadResult.error)
-          .filter(Boolean)
-          .join(" "),
-      );
+            file: evidence.file,
+            evidenceId: evidence.id,
+          });
+        if (uploadResult.error) uploadErrors.push(uploadResult.error);
+        else completedEvidenceIds.push(evidence.id);
+      }
+
+      if (uploadErrors.length > 0) {
+        try {
+          await queueReportSubmission(
+            submissionInput,
+            preparedEvidence,
+            completedEvidenceIds,
+          );
+          setAttachmentWarning(
+            "Laporan tersimpan. Foto yang belum berhasil diunggah masuk antrean sinkronisasi.",
+          );
+        } catch {
+          setAttachmentWarning(uploadErrors.join(" "));
+        }
+      }
     }
 
     setCreatedReportId(result.report.id);
     window.localStorage.removeItem(REPORT_DRAFT_KEY);
+    await clearReportDraftEvidence();
     setSubmitting(false);
   }
 
@@ -880,8 +1006,11 @@ function NewReportPage() {
     setError("");
     setAttachmentWarning("");
     setCreatedReportId("");
+    setSubmissionId(crypto.randomUUID());
+    setSubmissionQueued(false);
     setMobileStep(1);
     window.localStorage.removeItem(REPORT_DRAFT_KEY);
+    void clearReportDraftEvidence();
     invalidateAiState();
   }
 
@@ -892,13 +1021,12 @@ function NewReportPage() {
           <section className="rounded-lg border border-emerald-200 bg-white p-6 text-center shadow-sm">
             <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-600" />
             <h1 className="mt-4 text-2xl font-bold text-slate-900">
-              Laporan Berhasil Disimpan
+              {submissionQueued ? "Laporan Tersimpan di Perangkat" : "Laporan Berhasil Disimpan"}
             </h1>
             <p className="mt-2 text-sm text-slate-500">
-              {reportTypeLabels[reportType]} di {selectedAsset?.name ?? selectedLaboratory?.name}
-              {previewRisk
-                ? ` telah disimpan dengan skor risiko ${previewRisk.score} (${previewRisk.category}).`
-                : " telah disimpan."}
+              {submissionQueued
+                ? "Koneksi sedang tidak tersedia. Laporan akan dikirim otomatis menggunakan akun ini saat koneksi kembali."
+                : `${reportTypeLabels[reportType]} di ${selectedAsset?.name ?? selectedLaboratory?.name}${previewRisk ? ` telah disimpan dengan skor risiko ${previewRisk.score} (${previewRisk.category}).` : " telah disimpan."}`}
             </p>
 
             {attachmentWarning && (
@@ -911,22 +1039,31 @@ function NewReportPage() {
             )}
 
             <div className="mt-6 grid gap-3 sm:grid-cols-3">
-              <Link
-                href={`/reports/${createdReportId}`}
-                className="inline-flex min-h-11 items-center justify-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
-              >
-                Lihat Detail
-              </Link>
+              {submissionQueued ? (
+                <Link
+                  href="/reports"
+                  className="inline-flex min-h-12 items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                >
+                  Buka Daftar Laporan
+                </Link>
+              ) : (
+                <Link
+                  href={`/reports/${createdReportId}`}
+                  className="inline-flex min-h-12 items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                >
+                  Lihat Detail
+                </Link>
+              )}
               <button
                 type="button"
                 onClick={resetForm}
-                className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
                 Buat Laporan Baru
               </button>
               <Link
                 href="/reports"
-                className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
                 Daftar Laporan
               </Link>
@@ -1021,7 +1158,7 @@ function NewReportPage() {
                   value={selectedAssetId}
                   onChange={(event) => handleAssetChange(event.target.value)}
                   disabled={assetsLoading}
-                  className="min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:bg-slate-100"
+                  className="min-h-12 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:bg-slate-100"
                 >
                   <option value="">Area umum / tidak terkait aset</option>
                   {assets.map((asset) => (
@@ -1045,7 +1182,7 @@ function NewReportPage() {
                   }}
                   disabled={assetsLoading || Boolean(selectedAsset)}
                   required
-                  className="min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:bg-slate-100"
+                  className="min-h-12 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:bg-slate-100"
                 >
                   <option value="">Pilih laboratorium...</option>
                   {laboratories.map((laboratory) => (
@@ -1082,7 +1219,7 @@ function NewReportPage() {
                   max={localDateTimeValue()}
                   onChange={(event) => setOccurredAt(event.target.value)}
                   required
-                  className="min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                  className="min-h-12 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                 />
               </label>
 
@@ -1095,7 +1232,7 @@ function NewReportPage() {
                     invalidateAiState();
                   }}
                   required
-                  className="min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                  className="min-h-12 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
                 >
                   <option value="">Pilih kategori...</option>
                   {Object.entries(hazardCategoryLabels).map(([value, label]) => (
@@ -1124,7 +1261,7 @@ function NewReportPage() {
                 maxLength={160}
                 placeholder="Contoh: Kabel mesin bor terkelupas"
                 required
-                className="min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                className="min-h-12 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
               />
             </div>
 
@@ -1168,7 +1305,7 @@ function NewReportPage() {
                 }}
                 maxLength={160}
                 required
-                className="min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                className="min-h-12 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
               />
             </div>
 
@@ -1180,7 +1317,7 @@ function NewReportPage() {
                 onChange={(event) => setActivityAtTime(event.target.value)}
                 maxLength={500}
                 placeholder="Contoh: Praktik pengeboran benda kerja"
-                className="min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                className="min-h-12 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
               />
             </label>
           </section>
@@ -1254,7 +1391,7 @@ function NewReportPage() {
 
             <label className="block">
               <span className="mb-1 flex items-center gap-1 text-sm font-medium text-slate-700"><Users className="h-4 w-4" /> Saksi atau pihak yang mengetahui</span>
-              <input type="text" value={witnessDetails} onChange={(event) => setWitnessDetails(event.target.value)} maxLength={500} placeholder="Nama atau keterangan saksi, jika ada" className="min-h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" />
+              <input type="text" value={witnessDetails} onChange={(event) => setWitnessDetails(event.target.value)} maxLength={500} placeholder="Nama atau keterangan saksi, jika ada" className="min-h-12 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" />
             </label>
 
             <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -1319,7 +1456,7 @@ function NewReportPage() {
                   type="button"
                   onClick={handleGenerateAiRecommendation}
                   disabled={aiLoading || aiRetrySeconds > 0 || submitting}
-                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-400"
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-400"
                 >
                   {aiLoading ? (
                     <>
@@ -1425,21 +1562,21 @@ function NewReportPage() {
                     <button
                       type="button"
                       onClick={handleApplyAiSuggestion}
-                      className="inline-flex min-h-10 items-center justify-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                      className="inline-flex min-h-12 items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
                     >
                       Gunakan Saran AI
                     </button>
                     <button
                       type="button"
                       onClick={handleManualAiReview}
-                      className="inline-flex min-h-10 items-center justify-center rounded-md border border-blue-300 bg-white px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
+                      className="inline-flex min-h-12 items-center justify-center rounded-xl border border-blue-300 bg-white px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50"
                     >
                       Ubah Nilai
                     </button>
                     <button
                       type="button"
                       onClick={handleIgnoreAiSuggestion}
-                      className="inline-flex min-h-10 items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                      className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
                     >
                       Abaikan Saran
                     </button>
@@ -1455,24 +1592,54 @@ function NewReportPage() {
               <h2 className="text-lg font-semibold text-slate-900">Foto Bukti</h2>
             </div>
             <p className="text-xs text-slate-500">
-              Opsional. Maksimal tiga file JPG, PNG, atau WebP; masing-masing maksimal 5 MB.
+              Opsional. Ambil foto langsung dengan kamera atau pilih foto dari galeri. Foto besar dioptimalkan di perangkat sebelum disimpan dan dikirim. Maksimal tiga file JPG, PNG, atau WebP.
             </p>
-            <input
-              id="report-evidence"
-              type="file"
-              multiple
-              accept="image/jpeg,image/png,image/webp"
-              onChange={(event) =>
-                handleEvidenceChange(event.target.files, event.currentTarget)
-              }
-              className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-emerald-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-emerald-700 hover:file:bg-emerald-100"
-            />
+            {optimizingEvidence && <p role="status" className="flex items-center gap-2 rounded-xl bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-800"><Loader2 className="h-4 w-4 animate-spin" /> Menyiapkan foto agar lebih ringan...</p>}
+            <div className="grid grid-cols-2 gap-3">
+              <label
+                htmlFor="report-evidence-camera"
+                className="inline-flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-3 py-3 text-center text-sm font-bold text-white transition hover:bg-emerald-700 active:scale-[0.98]"
+              >
+                <Camera className="h-5 w-5 shrink-0" />
+                Ambil Foto
+              </label>
+              <input
+                id="report-evidence-camera"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                capture="environment"
+                disabled={optimizingEvidence}
+                onChange={(event) =>
+                  void handleEvidenceChange(event.target.files, event.currentTarget)
+                }
+                className="sr-only"
+              />
+
+              <label
+                htmlFor="report-evidence-gallery"
+                className="inline-flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-center text-sm font-bold text-slate-700 transition hover:border-emerald-300 hover:bg-emerald-50 active:scale-[0.98]"
+              >
+                <Images className="h-5 w-5 shrink-0" />
+                Pilih Galeri
+              </label>
+              <input
+                id="report-evidence-gallery"
+                type="file"
+                multiple
+                accept="image/jpeg,image/png,image/webp"
+                disabled={optimizingEvidence}
+                onChange={(event) =>
+                  void handleEvidenceChange(event.target.files, event.currentTarget)
+                }
+                className="sr-only"
+              />
+            </div>
             {evidenceFiles.length > 0 && (
               <div className="space-y-2">
                 {evidenceFiles.map((file) => (
                   <div key={`${file.name}-${file.lastModified}`} className="flex min-w-0 items-center justify-between gap-3 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
                     <span className="min-w-0 break-all">{file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)</span>
-                    <button type="button" aria-label={`Hapus ${file.name}`} onClick={() => setEvidenceFiles((current) => current.filter((item) => item !== file))} className="shrink-0 rounded-full p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"><X className="h-4 w-4" /></button>
+                    <button type="button" aria-label={`Hapus ${file.name}`} onClick={() => setEvidenceFiles((current) => current.filter((item) => item !== file))} className="grid h-12 w-12 shrink-0 place-items-center rounded-full text-slate-400 hover:bg-slate-200 hover:text-slate-700"><X className="h-4 w-4" /></button>
                   </div>
                 ))}
               </div>
@@ -1500,7 +1667,7 @@ function NewReportPage() {
 
           <button
             type="submit"
-            disabled={submitting || assetsLoading}
+            disabled={submitting || assetsLoading || optimizingEvidence}
             className="hidden min-h-12 w-full items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-400 md:inline-flex"
           >
             {submitting ? (
@@ -1525,7 +1692,7 @@ function NewReportPage() {
                 Lanjutkan <ChevronRight className="h-4 w-4" />
               </button>
             ) : (
-              <button type="submit" disabled={submitting || assetsLoading} className="inline-flex min-h-12 flex-[1.4] items-center justify-center gap-2 rounded-2xl bg-[#08775a] px-4 text-sm font-bold text-white shadow-lg disabled:opacity-60">
+              <button type="submit" disabled={submitting || assetsLoading || optimizingEvidence} className="inline-flex min-h-12 flex-[1.4] items-center justify-center gap-2 rounded-2xl bg-[#08775a] px-4 text-sm font-bold text-white shadow-lg disabled:opacity-60">
                 {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Menyimpan...</> : <><Send className="h-4 w-4" /> Kirim Laporan</>}
               </button>
             )}

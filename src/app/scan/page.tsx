@@ -16,7 +16,12 @@ import QrCameraScanner, {
   type CameraLookupResult,
 } from "@/components/scan/QrCameraScanner";
 import { getCurrentUserProfile } from "@/lib/auth";
-import { fetchAssetByLookup, type DatabaseAsset } from "@/lib/assets";
+import {
+  fetchAssetByLookup,
+  fetchAssetContact,
+  type AssetContactSummary,
+  type DatabaseAsset,
+} from "@/lib/assets";
 import {
   fetchAssetScanSafety,
   recordAssetScan,
@@ -30,6 +35,7 @@ const EXAMPLE_INPUTS = ["AST-001", "vocasafe://assets/AST-001"];
 interface ScanResult {
   asset: DatabaseAsset;
   safety: AssetScanSafetySummary;
+  contact: AssetContactSummary | null;
 }
 
 function ScanPageContent() {
@@ -96,7 +102,10 @@ function ScanPageContent() {
         return { success: false, message };
       }
 
-      const safetyResult = await fetchAssetScanSafety(result.asset);
+      const [safetyResult, contactResult] = await Promise.all([
+        fetchAssetScanSafety(result.asset),
+        fetchAssetContact(result.asset.id),
+      ]);
       if (requestSequenceRef.current !== requestSequence) {
         return { success: false, message: "Pemeriksaan dibatalkan." };
       }
@@ -105,7 +114,11 @@ function ScanPageContent() {
         console.error("[ScanPage] ringkasan K3 aset gagal dimuat.");
       }
 
-      setScanResult({ asset: result.asset, safety: safetyResult.summary });
+      setScanResult({
+        asset: result.asset,
+        safety: safetyResult.summary,
+        contact: contactResult.contact,
+      });
       setLoading(false);
       void recordAssetScan(
         result.asset.id,
@@ -176,6 +189,7 @@ function ScanPageContent() {
           <AssetScanSafetyGate
             asset={scanResult.asset}
             safety={scanResult.safety}
+            contact={scanResult.contact}
             canCreateReport={canCreateReport}
             canCreateChecklist={canCreateChecklist}
             onReset={resetScan}
