@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Loader2, Save, X } from "lucide-react";
 import {
@@ -14,6 +14,7 @@ import {
   type LaboratorySummary,
 } from "@/lib/assets";
 import type { AppUser } from "@/types";
+import { useDialogFocus } from "@/lib/use-dialog-focus";
 
 interface AssetFormModalProps {
   asset?: DatabaseAsset | null;
@@ -79,6 +80,13 @@ export default function AssetFormModal({
   const [candidateError, setCandidateError] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  const closeDialog = useCallback(() => {
+    if (!saving) onClose();
+  }, [onClose, saving]);
+  useDialogFocus({ open: true, dialogRef, initialFocusRef: closeRef, onClose: closeDialog });
 
   useEffect(() => {
     let active = true;
@@ -99,16 +107,10 @@ export default function AssetFormModal({
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape" && !saving) onClose();
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
     return () => {
       document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [onClose, saving]);
+  }, []);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -169,6 +171,8 @@ export default function AssetFormModal({
 
   const modal = (
     <div
+      ref={dialogRef}
+      tabIndex={-1}
       className="fixed inset-0 z-[80] flex min-w-0 items-end justify-center overflow-hidden bg-slate-950/45 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-[max(0.5rem,env(safe-area-inset-top))] backdrop-blur-sm sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
@@ -185,10 +189,11 @@ export default function AssetFormModal({
             </h2>
           </div>
           <button
+            ref={closeRef}
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="shrink-0 rounded-full border border-slate-200 p-2 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="grid h-12 w-12 shrink-0 place-items-center rounded-full border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             aria-label="Tutup formulir aset"
           >
             <X className="h-5 w-5" />
@@ -422,14 +427,14 @@ export default function AssetFormModal({
             <button
               type="button"
               onClick={onClose}
-              className="min-h-11 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+              className="min-h-12 rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
             >
               Batal
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 disabled:opacity-60"
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-800 disabled:opacity-60"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               {saving ? "Menyimpan..." : "Simpan Aset"}

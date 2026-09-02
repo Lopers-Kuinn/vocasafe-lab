@@ -112,6 +112,7 @@ export async function uploadChecklistEvidence(
   itemId: string,
   file: File,
   measurementValue: number | null = null,
+  evidenceId?: string,
 ): Promise<{ error: string | null }> {
   if (!ALLOWED_EVIDENCE_TYPES.has(file.type)) {
     return { error: "Bukti harus berupa JPG, PNG, atau WebP." };
@@ -124,12 +125,14 @@ export async function uploadChecklistEvidence(
   if (!user) return { error: userError ?? "Sesi pengguna tidak tersedia." };
 
   const supabase = createSupabaseBrowserClient();
-  const path = `${resultId}/${user.id}/${crypto.randomUUID()}-${safeFileName(file.name)}`;
+  const path = `${resultId}/${user.id}/${evidenceId ?? crypto.randomUUID()}-${safeFileName(file.name)}`;
   const { error: uploadError } = await supabase.storage
     .from(EVIDENCE_BUCKET)
     .upload(path, file, { contentType: file.type, upsert: false });
 
-  if (uploadError) {
+  const objectAlreadyExists =
+    evidenceId && /already exists|duplicate|resource exists/i.test(uploadError?.message ?? "");
+  if (uploadError && !objectAlreadyExists) {
     return { error: "Bukti belum berhasil diunggah. Silakan coba kembali." };
   }
 

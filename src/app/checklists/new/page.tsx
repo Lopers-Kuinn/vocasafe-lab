@@ -6,13 +6,16 @@ import { useSearchParams } from "next/navigation";
 import {
   AlertCircle,
   ArrowLeft,
+  Camera,
   ChevronLeft,
   ChevronRight,
   CheckCircle2,
   FileImage,
+  Images,
   Loader2,
   Save,
   Send,
+  X,
 } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import { fetchAssets, type DatabaseAsset } from "@/lib/assets";
@@ -23,6 +26,15 @@ import {
 } from "@/lib/checklists";
 import { uploadChecklistEvidence } from "@/lib/checklist-v2";
 import { calculateRiskScore } from "@/lib/risk-scoring";
+import {
+  clearChecklistDraftEvidence,
+  isRetryableFieldError,
+  loadChecklistDraftEvidence,
+  prepareChecklistEvidence,
+  queueChecklistSubmission,
+  saveChecklistDraftEvidence,
+} from "@/lib/field-sync";
+import { optimizeEvidenceImage } from "@/lib/image-evidence";
 import type { ChecklistAnswer } from "@/types";
 
 interface AnswerState {
@@ -33,6 +45,8 @@ interface AnswerState {
 const CHECKLIST_DRAFT_KEY = "vocasafe_checklist_draft_v1";
 
 interface ChecklistDraft {
+  submissionId: string;
+  startedAt: string;
   templateId: string;
   selectedAssetId: string;
   responses: Record<string, AnswerState>;
@@ -59,6 +73,10 @@ function readChecklistDraft(): ChecklistDraft | null {
       typeof input === "number" && input >= 0 && input <= 5 ? input : 0;
 
     return {
+      submissionId:
+        typeof value.submissionId === "string" ? value.submissionId : "",
+      startedAt:
+        typeof value.startedAt === "string" ? value.startedAt : "",
       templateId: typeof value.templateId === "string" ? value.templateId : "",
       selectedAssetId:
         typeof value.selectedAssetId === "string" ? value.selectedAssetId : "",
@@ -136,6 +154,9 @@ function ChecklistForm() {
   const [probability, setProbability] = useState(0);
   const [exposure, setExposure] = useState(0);
   const [evidenceFiles, setEvidenceFiles] = useState<Record<string, File | null>>({});
+  const [optimizingEvidenceItemId, setOptimizingEvidenceItemId] = useState("");
+  const [submissionId, setSubmissionId] = useState("");
+  const [submissionQueued, setSubmissionQueued] = useState(false);
   const [measurements, setMeasurements] = useState<Record<string, string>>({});
   const [inspectorAttestation, setInspectorAttestation] = useState(false);
   const startedAtRef = useRef(new Date().toISOString());
@@ -146,17 +167,24 @@ function ChecklistForm() {
   const [mobilePhase, setMobilePhase] = useState<1 | 2 | 3>(1);
   const [mobileItemIndex, setMobileItemIndex] = useState(0);
   const draftReadyRef = useRef(false);
+  const evidenceReadyRef = useRef(false);
 
   useEffect(() => {
     let active = true;
 
-    void Promise.all([fetchActiveChecklistTemplates(), fetchAssets()]).then(
-      ([templateResult, assetResult]) => {
+    void Promise.all([
+      fetchActiveChecklistTemplates(),
+      fetchAssets(),
+      loadChecklistDraftEvidence(),
+    ]).then(
+      ([templateResult, assetResult, savedEvidence]) => {
         if (!active) return;
 
         setTemplates(templateResult.templates);
         setAssets(assetResult.assets);
         setLoading(false);
+        setEvidenceFiles(savedEvidence);
+        evidenceReadyRef.current = true;
 
         const errors = [templateResult.error, assetResult.error].filter(Boolean);
         if (errors.length > 0) {
@@ -165,6 +193,10 @@ function ChecklistForm() {
         }
 
         const draft = readChecklistDraft();
+        setSubmissionId(draft?.submissionId || crypto.randomUUID());
+        if (draft?.startedAt && !Number.isNaN(new Date(draft.startedAt).getTime())) {
+          startedAtRef.current = draft.startedAt;
+        }
         let initialTemplate = templateResult.templates[0] ?? null;
         if (draft?.templateId && !presetTemplateId) {
           initialTemplate =
@@ -276,11 +308,61 @@ function ChecklistForm() {
   const riskPreview = riskFindingActive && riskFactorsComplete
     ? calculateRiskScore({ severity, probability, exposure })
     : null;
+  const unansweredItemIndexes = checklistItems
+    .map((item, index) => (responses[item.id] ? -1 : index))
+    .filter((index) => index >= 0);
+  const findingItemIndexes = checklistItems
+    .map((item, index) => (responses[item.id]?.answer === "tidak" ? index : -1))
+    .filter((index) => index >= 0);
+
+  function jumpToChecklistItem(index: number) {
+    if (index < 0 || index >= checklistItems.length) return;
+    setError("");
+    setMobilePhase(2);
+    setMobileItemIndex(index);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function handleEvidenceChange(
+    itemId: string,
+    file: File | null,
+    input: HTMLInputElement,
+  ) {
+    setError("");
+    if (!file) return;
+
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setError("Bukti harus berupa JPG, PNG, atau WebP.");
+      input.value = "";
+      return;
+    }
+
+    if (file.size < 1 || file.size > 20 * 1024 * 1024) {
+      setError("Ukuran foto mentah maksimal 20 MB.");
+      input.value = "";
+      return;
+    }
+
+    setOptimizingEvidenceItemId(itemId);
+    try {
+      const optimized = await optimizeEvidenceImage(file);
+      if (optimized.file.size > 5 * 1024 * 1024) {
+        setError("Foto masih lebih besar dari 5 MB setelah dioptimalkan.");
+        return;
+      }
+      setEvidenceFiles((current) => ({ ...current, [itemId]: optimized.file }));
+    } finally {
+      setOptimizingEvidenceItemId("");
+      input.value = "";
+    }
+  }
 
   useEffect(() => {
     if (!draftReadyRef.current || loading || createdResultId) return;
 
     const draft: ChecklistDraft = {
+      submissionId,
+      startedAt: startedAtRef.current,
       templateId: activeTemplate?.id ?? "",
       selectedAssetId,
       responses,
@@ -311,7 +393,15 @@ function ChecklistForm() {
     responses,
     selectedAssetId,
     severity,
+    submissionId,
   ]);
+
+  useEffect(() => {
+    if (!evidenceReadyRef.current || loading || createdResultId) return;
+    void saveChecklistDraftEvidence(evidenceFiles).catch(() => {
+      setError("Foto draft belum dapat disimpan di perangkat. Jangan tutup halaman sebelum checklist dikirim.");
+    });
+  }, [createdResultId, evidenceFiles, loading]);
 
   function validateCurrentMobileItem() {
     const item = checklistItems[mobileItemIndex];
@@ -404,6 +494,12 @@ function ChecklistForm() {
     event.preventDefault();
     setError("");
 
+    if (optimizingEvidenceItemId) {
+      setMobilePhase(2);
+      setError("Tunggu hingga foto selesai disiapkan sebelum menyimpan checklist.");
+      return;
+    }
+
     if (!activeTemplate?.id) {
       setMobilePhase(1);
       setError("Template checklist aktif tidak ditemukan.");
@@ -468,7 +564,10 @@ function ChecklistForm() {
     }
 
     setSubmitting(true);
-    const result = await createChecklistResult({
+    const activeSubmissionId = submissionId || crypto.randomUUID();
+    if (!submissionId) setSubmissionId(activeSubmissionId);
+    const submissionInput = {
+      submissionId: activeSubmissionId,
       templateId: activeTemplate.id,
       assetId: selectedAssetId,
       laboratoryId: selectedAsset.laboratoryId,
@@ -482,37 +581,85 @@ function ChecklistForm() {
       })),
       startedAt: startedAtRef.current,
       inspectorAttestation,
-    });
+    };
+    const preparedEvidence = prepareChecklistEvidence(evidenceFiles, measurements);
+
+    if (!navigator.onLine) {
+      try {
+        await queueChecklistSubmission(submissionInput, preparedEvidence);
+        setSubmissionQueued(true);
+        setCreatedResultId(activeSubmissionId);
+        window.localStorage.removeItem(CHECKLIST_DRAFT_KEY);
+        await clearChecklistDraftEvidence();
+      } catch (queueError) {
+        setError(
+          queueError instanceof Error
+            ? queueError.message
+            : "Antrean checklist tidak dapat disimpan di perangkat.",
+        );
+      }
+      setSubmitting(false);
+      return;
+    }
+
+    const result = await createChecklistResult(submissionInput);
 
     if (result.resultSaved && result.resultId) {
-      const evidenceErrors = await Promise.all(
-        checklistItems
-          .filter((item) => evidenceFiles[item.id])
-          .map(async (item) => {
-            const measurement = Number(measurements[item.id]);
-            return uploadChecklistEvidence(
-              result.resultId as string,
-              item.id,
-              evidenceFiles[item.id] as File,
-              Number.isFinite(measurement) && measurements[item.id] !== "" ? measurement : null,
-            );
-          }),
-      );
-      const failedEvidenceCount = evidenceErrors.filter((upload) => upload.error).length;
+      const completedEvidenceIds: string[] = [];
+      const evidenceErrors: string[] = [];
+      for (const evidence of preparedEvidence) {
+        const upload = await uploadChecklistEvidence(
+          result.resultId,
+          evidence.itemId,
+          evidence.file,
+          evidence.measurementValue,
+          evidence.id,
+        );
+        if (upload.error) evidenceErrors.push(upload.error);
+        else completedEvidenceIds.push(evidence.id);
+      }
+
+      if (evidenceErrors.length > 0) {
+        try {
+          await queueChecklistSubmission(
+            submissionInput,
+            preparedEvidence,
+            completedEvidenceIds,
+            result.resultId,
+          );
+        } catch {
+          // Preserve the existing warning if the local outbox is unavailable.
+        }
+      }
+      const failedEvidenceCount = evidenceErrors.length;
       const warnings = [
         result.error,
         failedEvidenceCount > 0
-          ? `${failedEvidenceCount} bukti belum berhasil diunggah. Hasil checklist tetap tersimpan.`
+          ? `${failedEvidenceCount} bukti belum berhasil diunggah dan akan dicoba kembali. Hasil checklist tetap tersimpan.`
           : null,
       ].filter(Boolean);
       setSubmissionWarning(warnings.join(" "));
       setCreatedResultId(result.resultId ?? "saved");
       window.localStorage.removeItem(CHECKLIST_DRAFT_KEY);
+      await clearChecklistDraftEvidence();
       setSubmitting(false);
       return;
     }
 
     if (result.error) {
+      if (isRetryableFieldError(result.error)) {
+        try {
+          await queueChecklistSubmission(submissionInput, preparedEvidence);
+          setSubmissionQueued(true);
+          setCreatedResultId(activeSubmissionId);
+          window.localStorage.removeItem(CHECKLIST_DRAFT_KEY);
+          await clearChecklistDraftEvidence();
+          setSubmitting(false);
+          return;
+        } catch {
+          // Keep the original error and draft for manual retry.
+        }
+      }
       setError(result.error);
       setSubmitting(false);
       return;
@@ -520,6 +667,7 @@ function ChecklistForm() {
 
     setCreatedResultId(result.resultId ?? "saved");
     window.localStorage.removeItem(CHECKLIST_DRAFT_KEY);
+    await clearChecklistDraftEvidence();
     setSubmitting(false);
   }
 
@@ -537,9 +685,12 @@ function ChecklistForm() {
     setError("");
     setSubmissionWarning("");
     setCreatedResultId("");
+    setSubmissionId(crypto.randomUUID());
+    setSubmissionQueued(false);
     setMobilePhase(1);
     setMobileItemIndex(0);
     window.localStorage.removeItem(CHECKLIST_DRAFT_KEY);
+    void clearChecklistDraftEvidence();
   }
 
   if (createdResultId) {
@@ -549,11 +700,12 @@ function ChecklistForm() {
           <section className="rounded-lg border border-emerald-200 bg-white p-6 text-center shadow-sm">
             <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-600" />
             <h1 className="mt-4 text-2xl font-bold text-slate-900">
-              Checklist Berhasil Disimpan
+              {submissionQueued ? "Checklist Tersimpan di Perangkat" : "Checklist Berhasil Disimpan"}
             </h1>
             <p className="mt-2 text-sm text-slate-500">
-              Hasil {activeTemplate?.title} untuk {selectedAsset?.name} telah
-              dicatat sebagai hasil inspeksi.
+              {submissionQueued
+                ? "Koneksi sedang tidak tersedia. Checklist akan dikirim otomatis menggunakan akun ini saat koneksi kembali."
+                : `Hasil ${activeTemplate?.title} untuk ${selectedAsset?.name} telah dicatat sebagai hasil inspeksi.`}
             </p>
             {riskPreview && (
               <p className="mt-2 text-sm font-medium text-slate-700">
@@ -572,19 +724,28 @@ function ChecklistForm() {
               <button
                 type="button"
                 onClick={resetForm}
-                className="inline-flex min-h-11 items-center justify-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
                 Isi Checklist Baru
               </button>
-              <Link
-                href={`/checklists/${createdResultId}`}
-                className="inline-flex min-h-11 items-center justify-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-              >
-                Lihat Detail Hasil
-              </Link>
+              {submissionQueued ? (
+                <Link
+                  href="/checklists"
+                  className="inline-flex min-h-12 items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                >
+                  Buka Daftar Checklist
+                </Link>
+              ) : (
+                <Link
+                  href={`/checklists/${createdResultId}`}
+                  className="inline-flex min-h-12 items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                >
+                  Lihat Detail Hasil
+                </Link>
+              )}
               <Link
                 href="/checklists"
-                className="inline-flex min-h-11 items-center justify-center rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                className="inline-flex min-h-12 items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
               >
                 Lihat Daftar Checklist
               </Link>
@@ -733,6 +894,46 @@ function ChecklistForm() {
                   )}
                 </div>
 
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 md:hidden" aria-label="Navigator item checklist">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">Navigasi pemeriksaan</p>
+                      <p className="mt-1 text-xs font-semibold text-slate-700">
+                        {unansweredItemIndexes.length} belum dijawab · {findingItemIndexes.length} temuan
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      {unansweredItemIndexes.length > 0 && (
+                        <button type="button" onClick={() => jumpToChecklistItem(unansweredItemIndexes[0])} className="min-h-12 rounded-xl border border-slate-300 bg-white px-3 text-xs font-bold text-slate-700">
+                          Belum dijawab
+                        </button>
+                      )}
+                      {findingItemIndexes.length > 0 && (
+                        <button type="button" onClick={() => jumpToChecklistItem(findingItemIndexes[0])} className="min-h-12 rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-800">
+                          Temuan
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="Daftar nomor item checklist">
+                    {checklistItems.map((item, index) => {
+                      const answer = responses[item.id]?.answer;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => jumpToChecklistItem(index)}
+                          aria-label={`Buka item ${index + 1}: ${item.label}${answer === "tidak" ? ", temuan" : answer ? ", sudah dijawab" : ", belum dijawab"}`}
+                          aria-current={mobileItemIndex === index ? "step" : undefined}
+                          className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl border text-sm font-black ${mobileItemIndex === index ? "ring-2 ring-emerald-600 ring-offset-2" : ""} ${answer === "tidak" ? "border-red-500 bg-red-600 text-white" : answer ? "border-emerald-500 bg-emerald-600 text-white" : "border-slate-300 bg-white text-slate-600"}`}
+                        >
+                          {index + 1}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 {checklistItems.map((item, index) => {
                   const response = responses[item.id];
                   return (
@@ -822,26 +1023,72 @@ function ChecklistForm() {
                       )}
 
                       {(response?.answer === "tidak" || item.evidenceRequired) && (
-                        <label className="mt-3 block text-xs font-medium text-slate-600">
-                          Foto bukti {(response?.answer === "tidak" && item.isCritical) || item.evidenceRequired ? "*" : "(opsional)"}
-                          <span className="mt-1 flex min-h-11 items-center gap-2 rounded-md border border-dashed border-slate-300 bg-white px-3 py-2 text-sm text-slate-600">
-                            <FileImage className="h-4 w-4 shrink-0" />
-                            <span className="min-w-0 truncate">
-                              {evidenceFiles[item.id]?.name ?? "Pilih JPG, PNG, atau WebP (maks. 5 MB)"}
-                            </span>
-                          </span>
-                          <input
-                            type="file"
-                            accept="image/jpeg,image/png,image/webp"
-                            className="sr-only"
-                            onChange={(event) =>
-                              setEvidenceFiles((current) => ({
-                                ...current,
-                                [item.id]: event.target.files?.[0] ?? null,
-                              }))
-                            }
-                          />
-                        </label>
+                        <div className="mt-3 text-xs font-medium text-slate-600">
+                          <p>
+                            Foto bukti {(response?.answer === "tidak" && item.isCritical) || item.evidenceRequired ? "*" : "(opsional)"}
+                          </p>
+                          <div className="mt-2 grid grid-cols-2 gap-2">
+                            <label className="inline-flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-center text-sm font-bold text-white transition hover:bg-emerald-700 active:scale-[0.98]">
+                              <Camera className="h-4 w-4 shrink-0" /> Ambil Foto
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                capture="environment"
+                                disabled={optimizingEvidenceItemId === item.id}
+                                className="sr-only"
+                                onChange={(event) =>
+                                  void handleEvidenceChange(
+                                    item.id,
+                                    event.target.files?.[0] ?? null,
+                                    event.currentTarget,
+                                  )
+                                }
+                              />
+                            </label>
+                            <label className="inline-flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-sm font-bold text-slate-700 transition hover:border-emerald-300 hover:bg-emerald-50 active:scale-[0.98]">
+                              <Images className="h-4 w-4 shrink-0" /> Pilih Galeri
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                disabled={optimizingEvidenceItemId === item.id}
+                                className="sr-only"
+                                onChange={(event) =>
+                                  void handleEvidenceChange(
+                                    item.id,
+                                    event.target.files?.[0] ?? null,
+                                    event.currentTarget,
+                                  )
+                                }
+                              />
+                            </label>
+                          </div>
+                          {optimizingEvidenceItemId === item.id && (
+                            <p role="status" className="mt-2 flex items-center gap-2 rounded-xl bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-800">
+                              <Loader2 className="h-4 w-4 animate-spin" /> Menyiapkan foto agar lebih ringan...
+                            </p>
+                          )}
+                          {evidenceFiles[item.id] && (
+                            <div className="mt-2 flex min-h-12 items-center justify-between gap-2 rounded-xl border border-dashed border-emerald-300 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                              <span className="flex min-w-0 items-center gap-2">
+                                <FileImage className="h-4 w-4 shrink-0" />
+                                <span className="truncate">{evidenceFiles[item.id]?.name}</span>
+                              </span>
+                              <button
+                                type="button"
+                                aria-label={`Hapus ${evidenceFiles[item.id]?.name ?? "foto bukti"}`}
+                                onClick={() =>
+                                  setEvidenceFiles((current) => ({
+                                    ...current,
+                                    [item.id]: null,
+                                  }))
+                                }
+                                className="grid h-12 w-12 shrink-0 place-items-center rounded-full text-emerald-700 hover:bg-emerald-100"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       )}
 
                       {response?.answer === "tidak" && item.failureAction && (
@@ -887,7 +1134,7 @@ function ChecklistForm() {
                         id="severity"
                         value={severity}
                         onChange={(event) => setSeverity(Number(event.target.value))}
-                        className="min-h-11 w-full rounded-md border border-slate-300 px-3 py-2"
+                        className="min-h-12 w-full rounded-xl border border-slate-300 px-3 py-2"
                       >
                         <option value={0}>Pilih...</option>
                         {[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value}</option>)}
@@ -901,7 +1148,7 @@ function ChecklistForm() {
                         id="probability"
                         value={probability}
                         onChange={(event) => setProbability(Number(event.target.value))}
-                        className="min-h-11 w-full rounded-md border border-slate-300 px-3 py-2"
+                        className="min-h-12 w-full rounded-xl border border-slate-300 px-3 py-2"
                       >
                         <option value={0}>Pilih...</option>
                         {[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value}</option>)}
@@ -915,7 +1162,7 @@ function ChecklistForm() {
                         id="exposure"
                         value={exposure}
                         onChange={(event) => setExposure(Number(event.target.value))}
-                        className="min-h-11 w-full rounded-md border border-slate-300 px-3 py-2"
+                        className="min-h-12 w-full rounded-xl border border-slate-300 px-3 py-2"
                       >
                         <option value={0}>Pilih...</option>
                         {[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value}</option>)}
@@ -992,7 +1239,7 @@ function ChecklistForm() {
 
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || Boolean(optimizingEvidenceItemId)}
               className="hidden min-h-12 w-full items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-emerald-400 md:inline-flex"
             >
               {submitting ? (
@@ -1017,7 +1264,7 @@ function ChecklistForm() {
                   {mobilePhase === 2 && mobileItemIndex < checklistItems.length - 1 ? "Item berikutnya" : "Lanjutkan"} <ChevronRight className="h-4 w-4" />
                 </button>
               ) : (
-                <button type="submit" disabled={submitting} className="inline-flex min-h-12 flex-[1.4] items-center justify-center gap-2 rounded-2xl bg-[#08775a] px-4 text-sm font-bold text-white shadow-lg disabled:opacity-60">
+                <button type="submit" disabled={submitting || Boolean(optimizingEvidenceItemId)} className="inline-flex min-h-12 flex-[1.4] items-center justify-center gap-2 rounded-2xl bg-[#08775a] px-4 text-sm font-bold text-white shadow-lg disabled:opacity-60">
                   {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Menyimpan...</> : <><Send className="h-4 w-4" /> Simpan</>}
                 </button>
               )}

@@ -43,7 +43,7 @@ export const HAZARD_CATEGORY_LABELS: Record<HazardCategory, string> = {
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const REPORT_SELECT = `
+const REPORT_LEGACY_SELECT = `
   id,
   report_number,
   asset_id,
@@ -77,6 +77,45 @@ const REPORT_SELECT = `
   laboratory:laboratories(id,code,name)
 `;
 
+const REPORT_SELECT = `
+  id,
+  report_number,
+  asset_id,
+  laboratory_id,
+  reporter_id,
+  title,
+  description,
+  location,
+  report_type,
+  hazard_category,
+  occurred_at,
+  activity_at_time,
+  hazard_active,
+  immediate_action,
+  pic_notified,
+  people_affected,
+  injury_details,
+  witness_details,
+  is_confidential,
+  status,
+  severity,
+  probability,
+  exposure,
+  risk_score,
+  risk_category,
+  recommendation,
+  reported_at,
+  created_at,
+  updated_at,
+  acknowledged_at,
+  acknowledged_by,
+  assigned_to,
+  response_due_at,
+  assignee:user_profiles!reports_assigned_to_fkey(id,full_name,role),
+  asset:assets(id,code,name,location),
+  laboratory:laboratories(id,code,name)
+`;
+
 interface ReportAssetRow {
   id: string;
   code: string;
@@ -88,6 +127,12 @@ interface ReportLaboratoryRow {
   id: string;
   code: string;
   name: string;
+}
+
+interface ReportAssigneeRow {
+  id: string;
+  full_name: string;
+  role: UserRole;
 }
 
 interface ReportRow {
@@ -120,6 +165,11 @@ interface ReportRow {
   reported_at: string | null;
   created_at: string;
   updated_at: string;
+  acknowledged_at?: string | null;
+  acknowledged_by?: string | null;
+  assigned_to?: string | null;
+  response_due_at?: string | null;
+  assignee?: ReportAssigneeRow | ReportAssigneeRow[] | null;
   asset: ReportAssetRow | ReportAssetRow[] | null;
   laboratory: ReportLaboratoryRow | ReportLaboratoryRow[] | null;
 }
@@ -209,12 +259,26 @@ export interface DatabaseReport {
   reportedAt: string;
   createdAt: string;
   updatedAt: string;
+  acknowledgedAt: string | null;
+  acknowledgedBy: string | null;
+  assignedTo: string | null;
+  responseDueAt: string | null;
+  assignee: ReportAssigneeSummary | null;
   asset: ReportAssetSummary | null;
   laboratory: ReportLaboratoryRow | null;
   attachments: ReportAttachment[];
 }
 
+export interface ReportAssigneeSummary {
+  id: string;
+  fullName: string;
+  role: UserRole;
+}
+
+export type ReportResponseAssignee = ReportAssigneeSummary;
+
 export interface CreateReportInput {
+  submissionId: string;
   assetId: string | null;
   laboratoryId: string;
   title: string;
@@ -242,6 +306,7 @@ function firstRelation<T>(value: T | T[] | null): T | null {
 function mapReport(row: ReportRow): DatabaseReport {
   const asset = firstRelation(row.asset);
   const laboratory = firstRelation(row.laboratory);
+  const assignee = firstRelation(row.assignee ?? null);
   const calculatedRisk = calculateRiskScore({
     severity: row.severity,
     probability: row.probability,
@@ -278,6 +343,13 @@ function mapReport(row: ReportRow): DatabaseReport {
     reportedAt: row.reported_at ?? row.created_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    acknowledgedAt: row.acknowledged_at ?? null,
+    acknowledgedBy: row.acknowledged_by ?? null,
+    assignedTo: row.assigned_to ?? null,
+    responseDueAt: row.response_due_at ?? null,
+    assignee: assignee
+      ? { id: assignee.id, fullName: assignee.full_name, role: assignee.role }
+      : null,
     asset: asset
       ? {
           id: asset.id,
@@ -295,6 +367,17 @@ function mapReport(row: ReportRow): DatabaseReport {
       : null,
     attachments: [],
   };
+}
+
+function operationalSchemaUnavailable(error: { code?: string; message?: string } | null): boolean {
+  return Boolean(
+    error &&
+      (error.code === "42703" ||
+        error.code === "PGRST200" ||
+        /acknowledged_at|assigned_to|reports_assigned_to_fkey|response_due_at/i.test(
+          error.message ?? "",
+        )),
+  );
 }
 
 function errorMessage(error: unknown): string {
@@ -349,10 +432,19 @@ export async function fetchReports(): Promise<{
 }> {
   try {
     const supabase = createSupabaseBrowserClient();
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from("reports")
       .select(REPORT_SELECT)
       .order("reported_at", { ascending: false });
+
+    if (operationalSchemaUnavailable(error)) {
+      const legacyResult = await supabase
+        .from("reports")
+        .select(REPORT_LEGACY_SELECT)
+        .order("reported_at", { ascending: false });
+      data = legacyResult.data as typeof data;
+      error = legacyResult.error;
+    }
 
     if (error) return { reports: [], error: error.message };
 
@@ -376,11 +468,21 @@ export async function fetchReportById(id: string): Promise<{
 
   try {
     const supabase = createSupabaseBrowserClient();
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from("reports")
       .select(REPORT_SELECT)
       .eq("id", id)
       .maybeSingle();
+
+    if (operationalSchemaUnavailable(error)) {
+      const legacyResult = await supabase
+        .from("reports")
+        .select(REPORT_LEGACY_SELECT)
+        .eq("id", id)
+        .maybeSingle();
+      data = legacyResult.data as typeof data;
+      error = legacyResult.error;
+    }
 
     if (error) return { report: null, error: error.message, attachmentError: null };
     if (!data) return { report: null, error: null, attachmentError: null };
@@ -460,6 +562,89 @@ export async function fetchReportFollowUps(reportId: string): Promise<{
     };
   } catch (error) {
     return { followUps: [], error: errorMessage(error) };
+  }
+}
+
+export async function fetchReportResponseAssignees(
+  reportId: string,
+): Promise<{ assignees: ReportResponseAssignee[]; unavailable: boolean; error: string | null }> {
+  if (!UUID_PATTERN.test(reportId)) {
+    return { assignees: [], unavailable: false, error: "ID laporan tidak valid." };
+  }
+
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase.rpc("get_report_response_assignees", {
+      target_report_id: reportId,
+    });
+    const unavailable =
+      error?.code === "PGRST202" ||
+      /get_report_response_assignees.*not found|could not find the function/i.test(
+        error?.message ?? "",
+      );
+    if (unavailable) return { assignees: [], unavailable: true, error: null };
+    if (error) {
+      return {
+        assignees: [],
+        unavailable: false,
+        error: "Daftar PIC belum dapat dimuat.",
+      };
+    }
+
+    return {
+      assignees: ((data ?? []) as Array<{ id: string; full_name: string; role: UserRole }>).map(
+        (row) => ({ id: row.id, fullName: row.full_name, role: row.role }),
+      ),
+      unavailable: false,
+      error: null,
+    };
+  } catch {
+    return { assignees: [], unavailable: false, error: "Daftar PIC belum dapat dimuat." };
+  }
+}
+
+export async function planReportResponse(input: {
+  reportId: string;
+  assigneeId: string;
+  dueAt: string;
+  note: string;
+}): Promise<{ saved: boolean; error: string | null }> {
+  const note = input.note.trim();
+  if (!UUID_PATTERN.test(input.reportId) || !UUID_PATTERN.test(input.assigneeId)) {
+    return { saved: false, error: "Laporan atau PIC tidak valid." };
+  }
+  if (note.length < 5 || note.length > 1000) {
+    return { saved: false, error: "Catatan acknowledgement harus berisi 5 sampai 1000 karakter." };
+  }
+  const dueAt = new Date(input.dueAt);
+  if (Number.isNaN(dueAt.getTime()) || dueAt.getTime() <= Date.now()) {
+    return { saved: false, error: "Tenggat respons harus berada di masa mendatang." };
+  }
+
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase.rpc("plan_report_response", {
+      target_report_id: input.reportId,
+      target_assignee_id: input.assigneeId,
+      target_due_at: dueAt.toISOString(),
+      acknowledgement_note: note,
+    });
+    const unavailable =
+      error?.code === "PGRST202" ||
+      /plan_report_response.*not found|could not find the function/i.test(error?.message ?? "");
+    if (unavailable) {
+      return {
+        saved: false,
+        error: "Operational Response belum aktif. Terapkan migration 015 terlebih dahulu.",
+      };
+    }
+    const response = Array.isArray(data) ? data[0] : data;
+    if (error || !response) {
+      return { saved: false, error: "Rencana respons belum berhasil disimpan." };
+    }
+    return { saved: true, error: null };
+  } catch {
+    return { saved: false, error: "Rencana respons belum berhasil disimpan." };
   }
 }
 
@@ -582,6 +767,10 @@ export async function createReport(input: CreateReportInput): Promise<{
   reporterId: string | null;
   error: string | null;
 }> {
+  if (!UUID_PATTERN.test(input.submissionId)) {
+    return { report: null, reporterId: null, error: "ID pengiriman laporan tidak valid." };
+  }
+
   try {
     const supabase = createSupabaseBrowserClient();
     const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -598,6 +787,7 @@ export async function createReport(input: CreateReportInput): Promise<{
     const { data, error } = await supabase
       .from("reports")
       .insert({
+        id: input.submissionId,
         report_number: generateReportNumber(),
         asset_id: input.assetId,
         laboratory_id: input.laboratoryId,
@@ -626,8 +816,24 @@ export async function createReport(input: CreateReportInput): Promise<{
         risk_category: risk.category,
         recommendation: risk.recommendation,
       })
-      .select(REPORT_SELECT)
+      .select(REPORT_LEGACY_SELECT)
       .single();
+
+    if (error?.code === "23505") {
+      const { data: existing, error: existingError } = await supabase
+        .from("reports")
+        .select(REPORT_LEGACY_SELECT)
+        .eq("id", input.submissionId)
+        .eq("reporter_id", authData.user.id)
+        .maybeSingle();
+      if (existing && !existingError) {
+        return {
+          report: mapReport(existing as unknown as ReportRow),
+          reporterId: authData.user.id,
+          error: null,
+        };
+      }
+    }
 
     if (error) {
       return { report: null, reporterId: authData.user.id, error: error.message };
@@ -648,13 +854,15 @@ export async function uploadReportEvidence(input: {
   reporterId: string;
   bucket: string;
   file: File;
+  evidenceId?: string;
 }): Promise<{ error: string | null }> {
   const validationError = validateEvidenceFile(input.file);
   if (validationError) return { error: validationError };
 
   try {
     const supabase = createSupabaseBrowserClient();
-    const path = `reports/${input.reportId}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}-${safeFileName(input.file.name)}`;
+    const evidenceId = input.evidenceId ?? crypto.randomUUID();
+    const path = `reports/${input.reportId}/${evidenceId}-${safeFileName(input.file.name)}`;
     const { error: uploadError } = await supabase.storage
       .from(input.bucket)
       .upload(path, input.file, {
@@ -663,15 +871,27 @@ export async function uploadReportEvidence(input: {
         upsert: false,
       });
 
-    if (uploadError) {
+    const objectAlreadyExists =
+      input.evidenceId && /already exists|duplicate|resource exists/i.test(uploadError?.message ?? "");
+    if (uploadError && !objectAlreadyExists) {
       return {
         error: `Laporan tersimpan, tetapi foto gagal diunggah: ${uploadError.message}`,
       };
     }
 
+    const { data: existingMetadata, error: existingMetadataError } = await supabase
+      .from("report_attachments")
+      .select("id")
+      .eq("id", evidenceId)
+      .eq("report_id", input.reportId)
+      .maybeSingle();
+
+    if (existingMetadata && !existingMetadataError) return { error: null };
+
     const { error: metadataError } = await supabase
       .from("report_attachments")
       .insert({
+        id: evidenceId,
         report_id: input.reportId,
         bucket: input.bucket,
         path,
@@ -680,6 +900,8 @@ export async function uploadReportEvidence(input: {
         size_bytes: input.file.size,
         uploaded_by: input.reporterId,
       });
+
+    if (metadataError?.code === "23505") return { error: null };
 
     if (metadataError) {
       await supabase.storage.from(input.bucket).remove([path]);

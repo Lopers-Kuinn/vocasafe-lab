@@ -21,6 +21,8 @@ import {
   X,
 } from "lucide-react";
 import ConnectionStatus from "@/components/mobile/ConnectionStatus";
+import FieldSyncManager from "@/components/mobile/FieldSyncManager";
+import NotificationCenter from "@/components/mobile/NotificationCenter";
 import {
   clearCachedCurrentUser,
   getCurrentUser,
@@ -39,6 +41,7 @@ import {
   SESSION_IDLE_LIMIT_MS,
   SESSION_IDLE_WARNING_MS,
 } from "@/lib/session-activity";
+import { useDialogFocus } from "@/lib/use-dialog-focus";
 import type { AppUser } from "@/types";
 
 const navItems = [
@@ -102,6 +105,24 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const inactivityLogoutStarted = useRef(false);
   const logoutReason = useRef<"inactive" | null>(null);
   const lastActivityWrite = useRef(0);
+  const mobileMenuDialogRef = useRef<HTMLDivElement>(null);
+  const mobileMenuCloseRef = useRef<HTMLButtonElement>(null);
+  const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
+  useDialogFocus({
+    open: mobileMenuOpen,
+    dialogRef: mobileMenuDialogRef,
+    initialFocusRef: mobileMenuCloseRef,
+    onClose: closeMobileMenu,
+  });
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mobileMenuOpen]);
 
   const handleInactivityLogout = useCallback(async () => {
     if (inactivityLogoutStarted.current) return;
@@ -371,7 +392,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="relative min-h-dvh w-full max-w-full overflow-x-clip">
+      <a
+        href="#main-content"
+        className="fixed left-3 top-3 z-[200] -translate-y-24 rounded-xl bg-slate-950 px-4 py-3 text-sm font-bold text-white shadow-xl transition focus:translate-y-0"
+      >
+        Lewati ke konten utama
+      </a>
       <ScrollAmbientBackground />
+      <FieldSyncManager />
 
       <header className="sticky top-0 z-40 border-b border-emerald-950/[0.06] bg-[#f8fbf8]/80 backdrop-blur-xl">
         <div className="mx-auto flex h-[72px] w-full max-w-[1600px] items-center justify-between gap-2 px-3 sm:px-6">
@@ -390,11 +418,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               </span>
             </div>
             <div className="hidden md:block"><ConnectionStatus compact /></div>
+            <NotificationCenter />
             <button
               type="button"
               onClick={handleLogout}
               aria-label="Keluar dari aplikasi"
-              className="grid h-10 w-10 place-items-center rounded-2xl border border-emerald-950/[0.08] bg-white/75 text-slate-500 shadow-sm transition hover:-translate-y-0.5 hover:border-red-200 hover:text-red-600"
+              className="grid h-12 w-12 place-items-center rounded-2xl border border-emerald-950/[0.08] bg-white/75 text-slate-500 shadow-sm transition hover:-translate-y-0.5 hover:border-red-200 hover:text-red-600"
             >
               <LogOut className="h-4 w-4" />
             </button>
@@ -445,7 +474,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </aside>
 
-        <main className="min-w-0 max-w-full flex-1 overflow-x-clip px-4 py-5 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:px-6 sm:py-7 lg:px-6 lg:pb-10 xl:px-8">
+        <main id="main-content" tabIndex={-1} className="min-w-0 max-w-full flex-1 overflow-x-clip px-4 py-5 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:px-6 sm:py-7 lg:px-6 lg:pb-10 xl:px-8">
           <div key={pathname} className="page-enter min-w-0 max-w-full">
             {children}
           </div>
@@ -471,7 +500,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <button
             type="button"
             onClick={handleContinueSession}
-            className="min-h-10 w-full rounded-xl bg-amber-900 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-950"
+            className="min-h-12 w-full rounded-xl bg-amber-900 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-950"
           >
             Tetap masuk
           </button>
@@ -479,9 +508,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       )}
 
       {mobileMenuOpen && (
-        <div className="fixed inset-0 z-[80] lg:hidden" role="dialog" aria-modal="true" aria-label="Menu lainnya">
+        <div ref={mobileMenuDialogRef} tabIndex={-1} className="fixed inset-0 z-[80] lg:hidden" role="dialog" aria-modal="true" aria-label="Menu lainnya">
           <button
             type="button"
+            tabIndex={-1}
             aria-label="Tutup menu lainnya"
             onClick={() => setMobileMenuOpen(false)}
             className="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]"
@@ -498,10 +528,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
               </div>
               <button
+                ref={mobileMenuCloseRef}
                 type="button"
                 onClick={() => setMobileMenuOpen(false)}
                 aria-label="Tutup menu"
-                className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-slate-200 bg-white text-slate-600"
+                className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl border border-slate-200 bg-white text-slate-600"
               >
                 <X className="h-5 w-5" />
               </button>

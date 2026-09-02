@@ -172,6 +172,7 @@ export interface ChecklistSubmissionAnswer {
 }
 
 export interface CreateChecklistResultInput {
+  submissionId: string;
   templateId: string;
   assetId: string;
   laboratoryId: string | null;
@@ -353,11 +354,20 @@ export async function fetchChecklistResults(): Promise<{
 
 export async function createChecklistResult(
   input: CreateChecklistResultInput,
+  options: { requireIdempotency?: boolean } = {},
 ): Promise<{
   resultId: string | null;
   resultSaved: boolean;
   error: string | null;
 }> {
+  if (!UUID_PATTERN.test(input.submissionId)) {
+    return {
+      resultId: null,
+      resultSaved: false,
+      error: "ID pengiriman checklist tidak valid.",
+    };
+  }
+
   if (!input.templateId) {
     return {
       resultId: null,
@@ -492,28 +502,46 @@ export async function createChecklistResult(
     const risk = hasRiskFinding ? calculateRiskScore(input.riskInput) : null;
     const completedAt = new Date().toISOString();
 
-    const { data: resultData, error: resultError } = await supabase.rpc(
-      "submit_checklist_result_atomic",
-      {
-        target_template_id: input.templateId,
-        target_asset_id: input.assetId,
-        target_laboratory_id: input.laboratoryId,
-        result_completed_at: completedAt,
-        result_overall_note: input.overallNote.trim() || null,
-        result_has_risk_finding: hasRiskFinding,
-        result_severity: risk ? input.riskInput.severity : null,
-        result_probability: risk ? input.riskInput.probability : null,
-        result_exposure: risk ? input.riskInput.exposure : null,
-        result_risk_score: risk?.score ?? null,
-        result_risk_category: risk?.category ?? null,
-        result_recommendation: risk?.recommendation ?? null,
-        result_answers: input.answers.map((answer) => ({
-          item_id: answer.itemId,
-          answer: answer.answer,
-          note: answer.note.trim() || null,
-        })),
-      },
+    const rpcArguments = {
+      submission_id: input.submissionId,
+      target_template_id: input.templateId,
+      target_asset_id: input.assetId,
+      target_laboratory_id: input.laboratoryId,
+      result_completed_at: completedAt,
+      result_overall_note: input.overallNote.trim() || null,
+      result_has_risk_finding: hasRiskFinding,
+      result_severity: risk ? input.riskInput.severity : null,
+      result_probability: risk ? input.riskInput.probability : null,
+      result_exposure: risk ? input.riskInput.exposure : null,
+      result_risk_score: risk?.score ?? null,
+      result_risk_category: risk?.category ?? null,
+      result_recommendation: risk?.recommendation ?? null,
+      result_answers: input.answers.map((answer) => ({
+        item_id: answer.itemId,
+        answer: answer.answer,
+        note: answer.note.trim() || null,
+      })),
+    };
+    let { data: resultData, error: resultError } = await supabase.rpc(
+      "submit_checklist_result_idempotent",
+      rpcArguments,
     );
+
+    const idempotentRpcMissing =
+      resultError?.code === "PGRST202" ||
+      /submit_checklist_result_idempotent.*not found|could not find the function/i.test(
+        resultError?.message ?? "",
+      );
+    if (idempotentRpcMissing && !options.requireIdempotency) {
+      const legacyArguments = { ...rpcArguments };
+      delete (legacyArguments as Partial<typeof rpcArguments>).submission_id;
+      const legacyResult = await supabase.rpc(
+        "submit_checklist_result_atomic",
+        legacyArguments,
+      );
+      resultData = legacyResult.data;
+      resultError = legacyResult.error;
+    }
 
     if (resultError || !resultData) {
       return {
