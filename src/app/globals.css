@@ -1,0 +1,414 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f4f7f4;
+  --foreground: #10221b;
+  --surface: #ffffff;
+  --surface-muted: #edf3ef;
+  --brand: #08775a;
+  --brand-strong: #055844;
+  --brand-soft: #d9f7e9;
+  --violet-soft: #eee8ff;
+  --line: rgba(15, 62, 47, 0.1);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html,
+body {
+  width: 100%;
+  max-width: 100%;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-x: clip;
+  background-image:
+    radial-gradient(circle at 8% -8%, rgba(118, 230, 188, 0.2), transparent 34rem),
+    radial-gradient(circle at 94% 6%, rgba(183, 157, 255, 0.14), transparent 30rem),
+    linear-gradient(180deg, #fbfdfb 0%, #f4f7f4 48%, #eef3ef 100%);
+}
+
+::selection {
+  background: rgba(16, 185, 129, 0.2);
+  color: #064e3b;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.scroll-ambient {
+  --scroll-drift-slow: 0px;
+  --scroll-drift-medium: 0px;
+  --scroll-drift-fast: 0px;
+  --scroll-drift-side: 0px;
+  --scroll-drift-side-reverse: 0px;
+  contain: strict;
+}
+
+.scroll-ambient-orb {
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.scroll-ambient-orb-left {
+  transform: translate3d(
+    var(--scroll-drift-side),
+    var(--scroll-drift-medium),
+    0
+  );
+}
+
+.scroll-ambient-orb-right {
+  transform: translate3d(
+    var(--scroll-drift-side-reverse),
+    var(--scroll-drift-fast),
+    0
+  );
+}
+
+.scroll-ambient-orb-center {
+  transform: translate3d(
+    var(--scroll-drift-side),
+    var(--scroll-drift-slow),
+    0
+  );
+}
+
+
+.premium-surface {
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 20px 60px rgba(20, 66, 51, 0.09),
+    0 4px 16px rgba(20, 66, 51, 0.05);
+  backdrop-filter: blur(18px);
+}
+
+.soft-card {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.95) inset,
+    0 16px 42px rgba(20, 66, 51, 0.07);
+}
+
+.lift-card {
+  transition:
+    transform 220ms ease,
+    box-shadow 220ms ease,
+    border-color 220ms ease;
+}
+
+.lift-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(8, 119, 90, 0.2);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.95) inset,
+    0 24px 56px rgba(20, 66, 51, 0.11);
+}
+
+.gradient-text {
+  background: linear-gradient(110deg, #073e31 5%, #07956f 52%, #7158b8 96%);
+  background-clip: text;
+  color: transparent;
+}
+
+.fade-up {
+  animation: fade-up 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.float-slow {
+  animation: float-slow 6s ease-in-out infinite;
+}
+
+.page-enter {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  animation: page-enter 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.page-enter > * {
+  min-width: 0;
+  max-width: 100%;
+  animation: content-rise 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.page-enter :where(div, section, article, form, fieldset, dl) {
+  min-width: 0;
+}
+
+.page-enter :where(h1, h2, h3, p, li, dt, dd, label) {
+  overflow-wrap: anywhere;
+}
+
+.page-enter :where(input, select, textarea, img, video, canvas) {
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+.page-enter > *:nth-child(2) {
+  animation-delay: 55ms;
+}
+
+.page-enter > *:nth-child(3) {
+  animation-delay: 105ms;
+}
+
+.page-enter > *:nth-child(4) {
+  animation-delay: 150ms;
+}
+
+.page-enter > *:nth-child(n + 5) {
+  animation-delay: 190ms;
+}
+
+.page-enter :where(section, article, form) {
+  animation: content-rise 540ms 90ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: 50% 80%;
+  transition:
+    transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 240ms ease,
+    border-color 240ms ease,
+    background-color 240ms ease;
+}
+
+.page-enter :where(button, a) {
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease,
+    opacity 180ms ease;
+}
+
+.page-enter :where(button, a):active {
+  transform: scale(0.975);
+}
+
+.page-enter :where(input, select, textarea) {
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease,
+    transform 180ms ease;
+}
+
+.page-enter :where(input, select, textarea):focus {
+  transform: translateY(-1px);
+}
+
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 3px solid #059669 !important;
+  outline-offset: 3px;
+}
+
+label:has(input:focus-visible) {
+  outline: 3px solid #059669 !important;
+  outline-offset: 3px;
+}
+
+.page-enter tbody tr {
+  animation: row-reveal 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transition: background-color 180ms ease, transform 180ms ease;
+}
+
+.page-enter tbody tr:nth-child(2) {
+  animation-delay: 45ms;
+}
+
+.page-enter tbody tr:nth-child(3) {
+  animation-delay: 90ms;
+}
+
+.page-enter tbody tr:nth-child(4) {
+  animation-delay: 135ms;
+}
+
+.page-enter tbody tr:nth-child(n + 5) {
+  animation-delay: 180ms;
+}
+
+.page-enter tbody tr:nth-child(n + 9) {
+  animation: none;
+}
+
+@supports (content-visibility: auto) {
+  .page-enter > :where(section, article) {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 320px;
+  }
+}
+
+.motion-bar-x {
+  animation: grow-x 760ms 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: left center;
+}
+
+.motion-bar-y {
+  animation: grow-y 720ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: center bottom;
+}
+
+.status-pulse {
+  animation: status-pulse 2.4s ease-out infinite;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    filter: blur(5px);
+    transform: translateY(8px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes content-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes row-reveal {
+  from {
+    opacity: 0;
+    transform: translateX(-7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes grow-y {
+  from {
+    opacity: 0.35;
+    transform: scaleY(0.08);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+@keyframes status-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.22);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(16, 185, 129, 0);
+  }
+}
+
+@keyframes float-slow {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-1deg);
+  }
+  50% {
+    transform: translateY(-10px) rotate(1deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .scroll-ambient-orb {
+    transform: none !important;
+  }
+}
+
+@media (max-width: 639px) {
+  .page-enter {
+    animation-duration: 280ms;
+  }
+
+  .page-enter > *,
+  .page-enter :where(section, article, form) {
+    animation: none;
+  }
+
+  .page-enter :where(button, a, span, time) {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .page-enter :where(input, select, textarea) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .page-enter :where(input, select, textarea):focus {
+    transform: none;
+  }
+
+  .page-enter summary {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@media print {
+  body {
+    background: white;
+  }
+  header,
+  aside,
+  button {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+  }
+}
