@@ -94,6 +94,7 @@ Pengujian teknis mencakup role access, RLS lintas laboratorium, kamera QR, uploa
 - [Setup](docs/setup.md)
 - [Pengujian](docs/testing.md)
 - [Skenario demo](docs/demo-script.md)
+- [Demo Aplikasi](https://youtu.be/CqtN4_qNn5Y?si=-VIjedPppSi21oGE)
 
 ## Batasan
 
