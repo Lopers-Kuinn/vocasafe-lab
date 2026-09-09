@@ -229,6 +229,24 @@ export interface ReportFollowUp {
   createdAt: string;
 }
 
+export interface ReportContributor {
+  reportId: string;
+  fullName: string;
+  role: UserRole | null;
+}
+
+export interface ReportContributionReward {
+  points: number;
+  label: "Menunggu verifikasi" | "Kontribusi terverifikasi" | "Penanganan selesai" | "Tidak diberikan";
+}
+
+export interface AssetOpenReportSummary {
+  assetId: string;
+  openReportCount: number;
+  openCriticalReportCount: number;
+  lastReportedAt: string | null;
+}
+
 export interface DatabaseReport {
   id: string;
   reportNumber: string;
@@ -276,6 +294,17 @@ export interface ReportAssigneeSummary {
 }
 
 export type ReportResponseAssignee = ReportAssigneeSummary;
+
+export function getReportContributionReward(
+  status: ReportStatus,
+): ReportContributionReward {
+  if (status === "selesai") return { points: 15, label: "Penanganan selesai" };
+  if (status === "diverifikasi" || status === "dalam_penanganan") {
+    return { points: 10, label: "Kontribusi terverifikasi" };
+  }
+  if (status === "ditolak") return { points: 0, label: "Tidak diberikan" };
+  return { points: 0, label: "Menunggu verifikasi" };
+}
 
 export interface CreateReportInput {
   submissionId: string;
@@ -454,6 +483,95 @@ export async function fetchReports(): Promise<{
     };
   } catch (error) {
     return { reports: [], error: errorMessage(error) };
+  }
+}
+
+export async function fetchReportContributors(
+  reportIds: string[],
+): Promise<{ contributors: ReportContributor[]; error: string | null }> {
+  const validIds = [...new Set(reportIds.filter((id) => UUID_PATTERN.test(id)))].slice(0, 200);
+  if (validIds.length === 0) return { contributors: [], error: null };
+
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase.rpc("get_report_contributors", {
+      target_report_ids: validIds,
+    });
+
+    if (error) {
+      return {
+        contributors: [],
+        error: /get_report_contributors.*not found|could not find the function/i.test(error.message)
+          ? "Timeline pelapor tersedia setelah migration 016 diterapkan."
+          : "Identitas pelapor pada timeline belum dapat dimuat.",
+      };
+    }
+
+    return {
+      contributors: ((data ?? []) as Array<{
+        report_id: string;
+        full_name: string;
+        role: UserRole | null;
+      }>).map((row) => ({
+        reportId: row.report_id,
+        fullName: row.full_name,
+        role: row.role,
+      })),
+      error: null,
+    };
+  } catch {
+    return {
+      contributors: [],
+      error: "Identitas pelapor pada timeline belum dapat dimuat.",
+    };
+  }
+}
+
+export async function fetchAssetOpenReportSummary(
+  assetId: string,
+): Promise<{ summary: AssetOpenReportSummary | null; error: string | null }> {
+  if (!UUID_PATTERN.test(assetId)) return { summary: null, error: null };
+
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase.rpc("get_asset_open_report_summary", {
+      target_asset_id: assetId,
+    });
+
+    if (error) {
+      return {
+        summary: null,
+        error: /get_asset_open_report_summary.*not found|could not find the function/i.test(error.message)
+          ? "Ringkasan laporan aktif tersedia setelah migration 016 diterapkan."
+          : "Ringkasan laporan aktif belum dapat diperiksa.",
+      };
+    }
+
+    if (!Array.isArray(data) || data.length !== 1) {
+      return { summary: null, error: "Ringkasan laporan aktif tidak tersedia." };
+    }
+
+    const row = data[0] as {
+      asset_id: string;
+      open_report_count: number | string;
+      open_critical_report_count: number | string;
+      last_reported_at: string | null;
+    };
+    if (row.asset_id !== assetId) {
+      return { summary: null, error: "Identitas ringkasan laporan tidak cocok." };
+    }
+
+    return {
+      summary: {
+        assetId: row.asset_id,
+        openReportCount: Number(row.open_report_count) || 0,
+        openCriticalReportCount: Number(row.open_critical_report_count) || 0,
+        lastReportedAt: row.last_reported_at,
+      },
+      error: null,
+    };
+  } catch {
+    return { summary: null, error: "Ringkasan laporan aktif belum dapat diperiksa." };
   }
 }
 

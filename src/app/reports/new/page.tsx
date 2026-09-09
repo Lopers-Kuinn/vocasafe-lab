@@ -31,8 +31,10 @@ import {
 } from "@/lib/assets";
 import {
   createReport,
+  fetchAssetOpenReportSummary,
   uploadReportEvidence,
   validateEvidenceFile,
+  type AssetOpenReportSummary,
 } from "@/lib/reports";
 import { calculateRiskScore } from "@/lib/risk-scoring";
 import { getReportEvidenceBucket } from "@/lib/storage";
@@ -318,6 +320,9 @@ function NewReportPage() {
   const [laboratories, setLaboratories] = useState<LaboratorySummary[]>([]);
   const [assetsLoading, setAssetsLoading] = useState(true);
   const [assetError, setAssetError] = useState("");
+  const [assetReportSummary, setAssetReportSummary] =
+    useState<AssetOpenReportSummary | null>(null);
+  const [assetReportSummaryError, setAssetReportSummaryError] = useState("");
   const [selectedAssetId, setSelectedAssetId] = useState("");
   const [selectedLaboratoryId, setSelectedLaboratoryId] = useState("");
   const [reportType, setReportType] = useState<ReportType>("kondisi_tidak_aman");
@@ -485,6 +490,21 @@ function NewReportPage() {
   }, [createdReportId, evidenceFiles]);
 
   useEffect(() => {
+    let active = true;
+    if (!selectedAssetId) return () => { active = false; };
+
+    void fetchAssetOpenReportSummary(selectedAssetId).then((result) => {
+      if (!active) return;
+      setAssetReportSummary(result.summary);
+      setAssetReportSummaryError(result.error ?? "");
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedAssetId]);
+
+  useEffect(() => {
     return () => {
       aiRequestSequenceRef.current += 1;
       aiAbortControllerRef.current?.abort();
@@ -592,6 +612,8 @@ function NewReportPage() {
 
   function handleAssetChange(assetId: string) {
     setSelectedAssetId(assetId);
+    setAssetReportSummary(null);
+    setAssetReportSummaryError("");
     setError("");
     invalidateAiState();
     const asset = assets.find((item) => item.id === assetId);
@@ -1208,6 +1230,36 @@ function NewReportPage() {
                   Status: {selectedAsset.status.replaceAll("_", " ")}
                 </p>
               </div>
+            )}
+
+            {selectedAsset && assetReportSummary && assetReportSummary.openReportCount > 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" />
+                  <div>
+                    <p className="font-bold">
+                      Sudah ada {assetReportSummary.openReportCount} laporan aktif pada aset ini.
+                    </p>
+                    <p className="mt-1 leading-6 text-amber-800">
+                      {assetReportSummary.openCriticalReportCount > 0
+                        ? `${assetReportSummary.openCriticalReportCount} di antaranya berkategori kritis. `
+                        : ""}
+                      Tetap kirim laporan jika Anda memiliki bukti atau kondisi baru. Laporan akan tampil dalam kelompok aset yang sama tanpa membuka identitas pelapor lain.
+                    </p>
+                    {assetReportSummary.lastReportedAt && (
+                      <p className="mt-2 text-xs font-semibold text-amber-700">
+                        Aktivitas laporan terakhir {new Date(assetReportSummary.lastReportedAt).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {selectedAsset && assetReportSummaryError && (
+              <p role="status" className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                {assetReportSummaryError}
+              </p>
             )}
 
             <div className="grid gap-4 sm:grid-cols-2">

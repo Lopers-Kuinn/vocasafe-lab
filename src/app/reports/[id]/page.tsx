@@ -6,6 +6,7 @@ import Link from "next/link";
 import {
   AlertCircle,
   ArrowLeft,
+  Award,
   CalendarClock,
   CheckCircle2,
   Clock,
@@ -26,6 +27,7 @@ import {
   fetchReportById,
   fetchReportFollowUps,
   fetchReportResponseAssignees,
+  getReportContributionReward,
   HAZARD_CATEGORY_LABELS,
   planReportResponse,
   REPORT_TYPE_LABELS,
@@ -362,6 +364,8 @@ export default function ReportDetailPage() {
     );
   }
 
+  const contributionReward = getReportContributionReward(report.status);
+
   return (
     <AppShell>
       <div className="mx-auto max-w-3xl space-y-6">
@@ -382,6 +386,27 @@ export default function ReportDetailPage() {
           <h1 className="mt-4 break-words text-xl font-bold tracking-[-0.03em] text-slate-950">{report.title}</h1>
           <p className="mt-2 text-sm leading-6 text-slate-700">{report.recommendation}</p>
           {report.hazardActive && report.status !== "selesai" && <p className="mt-4 rounded-2xl bg-white/80 p-3 text-sm font-semibold leading-5 text-red-800">Amankan area dan jangan melanjutkan aktivitas sampai petugas menyatakan kondisi aman.</p>}
+        </section>
+
+        <section className="rounded-[24px] border border-amber-200 bg-gradient-to-r from-amber-50 to-white p-5 shadow-sm">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-amber-100 text-amber-700">
+                <Award className="h-5 w-5" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-amber-700">Kontribusi K3</p>
+                <h2 className="mt-1 font-bold text-slate-900">{contributionReward.label}</h2>
+                <p className="mt-1 text-xs leading-5 text-slate-600">
+                  Poin diberikan setelah laporan diverifikasi dan bertambah ketika penanganan selesai.
+                </p>
+              </div>
+            </div>
+            <div className={`w-fit rounded-2xl px-4 py-3 text-center ${contributionReward.points > 0 ? "bg-amber-500 text-white" : "bg-slate-100 text-slate-600"}`}>
+              <p className="text-2xl font-black leading-none">{contributionReward.points > 0 ? `+${contributionReward.points}` : "0"}</p>
+              <p className="mt-1 text-[10px] font-bold uppercase tracking-wide">poin</p>
+            </div>
+          </div>
         </section>
 
         <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">

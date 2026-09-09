@@ -2,17 +2,20 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, CalendarClock, FileWarning, Loader2, MapPin, Plus, Search, ShieldAlert, SlidersHorizontal, Tag, UserCheck } from "lucide-react";
+import { AlertCircle, Award, CalendarClock, ChevronRight, Clock3, FileWarning, Layers3, Loader2, MapPin, Plus, Search, ShieldAlert, SlidersHorizontal, Tag, UserCheck, Users } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import MobileFilterSheet from "@/components/mobile/MobileFilterSheet";
 import { fetchLaboratories, type LaboratorySummary } from "@/lib/assets";
-import { getCurrentUserProfile } from "@/lib/auth";
+import { getCurrentUserProfile, getRoleLabel } from "@/lib/auth";
 import { canEditReportStatus } from "@/lib/role-access";
 import {
   fetchReports,
+  fetchReportContributors,
+  getReportContributionReward,
   HAZARD_CATEGORY_LABELS,
   REPORT_TYPE_LABELS,
   type DatabaseReport,
+  type ReportContributor,
 } from "@/lib/reports";
 import type { HazardCategory, ReportStatus, ReportType, RiskLevel } from "@/types";
 import { useViewStateMemory } from "@/lib/use-view-state-memory";
@@ -66,6 +69,42 @@ function matchesAssignmentFilter(
   );
 }
 
+interface ReportGroup {
+  key: string;
+  assetName: string;
+  assetCode: string | null;
+  reports: DatabaseReport[];
+}
+
+function groupReportsByAsset(reports: DatabaseReport[]): ReportGroup[] {
+  const groups = new Map<string, ReportGroup>();
+
+  for (const report of reports) {
+    const key = report.assetId ? `asset:${report.assetId}` : `report:${report.id}`;
+    const group = groups.get(key) ?? {
+      key,
+      assetName: report.asset?.name ?? "Laporan tanpa aset",
+      assetCode: report.asset?.code ?? null,
+      reports: [],
+    };
+    group.reports.push(report);
+    groups.set(key, group);
+  }
+
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      reports: group.reports.sort(
+        (a, b) => new Date(b.reportedAt).getTime() - new Date(a.reportedAt).getTime(),
+      ),
+    }))
+    .sort(
+      (a, b) =>
+        new Date(b.reports[0].reportedAt).getTime() -
+        new Date(a.reports[0].reportedAt).getTime(),
+    );
+}
+
 export default function ReportsPage() {
   const [reports, setReports] = useState<DatabaseReport[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,11 +125,13 @@ export default function ReportsPage() {
   const [currentUserId, setCurrentUserId] = useState("");
   const [canManageResponses, setCanManageResponses] = useState(false);
   const [currentTimestamp, setCurrentTimestamp] = useState(0);
+  const [contributors, setContributors] = useState<ReportContributor[]>([]);
+  const [timelineWarning, setTimelineWarning] = useState("");
 
   useEffect(() => {
     let active = true;
 
-    void Promise.all([fetchReports(), fetchLaboratories(), getCurrentUserProfile()]).then(([result, laboratoryResult, profileResult]) => {
+    void Promise.all([fetchReports(), fetchLaboratories(), getCurrentUserProfile()]).then(async ([result, laboratoryResult, profileResult]) => {
       if (!active) return;
       setReports(result.reports);
       setLaboratories(laboratoryResult.laboratories);
@@ -105,6 +146,13 @@ export default function ReportsPage() {
           : "",
       );
       setLoading(false);
+
+      const contributorResult = await fetchReportContributors(
+        result.reports.map((report) => report.id),
+      );
+      if (!active) return;
+      setContributors(contributorResult.contributors);
+      setTimelineWarning(contributorResult.error ?? "");
     });
 
     return () => {
@@ -117,6 +165,11 @@ export default function ReportsPage() {
     return () => window.clearInterval(interval);
   }, []);
 
+  const contributorByReportId = useMemo(
+    () => new Map(contributors.map((contributor) => [contributor.reportId, contributor])),
+    [contributors],
+  );
+
   const filteredReports = useMemo(
     () =>
       reports.filter((report) => {
@@ -128,6 +181,7 @@ export default function ReportsPage() {
           report.asset?.name,
           report.asset?.code,
           report.laboratory?.name,
+          contributorByReportId.get(report.id)?.fullName,
         ]
           .filter(Boolean)
           .join(" ")
@@ -142,8 +196,10 @@ export default function ReportsPage() {
           (!term || searchable.includes(term))
         );
       }),
-    [assignmentFilter, canManageResponses, categoryFilter, currentTimestamp, currentUserId, laboratoryFilter, reports, riskFilter, search, typeFilter],
+    [assignmentFilter, canManageResponses, categoryFilter, contributorByReportId, currentTimestamp, currentUserId, laboratoryFilter, reports, riskFilter, search, typeFilter],
   );
+
+  const reportGroups = useMemo(() => groupReportsByAsset(filteredReports), [filteredReports]);
 
   const pendingMobileResultCount = useMemo(() => reports.filter((report) => {
     const term = search.trim().toLowerCase();
@@ -307,60 +363,91 @@ export default function ReportsPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            <p className="text-sm text-slate-500">
-              Menampilkan {filteredReports.length} dari {reports.length} laporan.
-            </p>
-            {filteredReports.map((report) => (
-              <Link
-                key={report.id}
-                href={`/reports/${report.id}`}
-                className="block min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0 flex-1">
-                    <p className="break-words font-semibold text-slate-900">{report.title}</p>
-                    <p className="mt-1 break-words text-sm text-slate-500">
-                      {report.asset
-                        ? `${report.asset.name} (${report.asset.code})`
-                        : "Tanpa aset"}
-                    </p>
-                    <p className="mt-1 break-words text-xs text-slate-400">
-                      {report.laboratory?.name ?? report.location} &middot;{" "}
-                      {new Date(report.occurredAt).toLocaleDateString("id-ID", {
-                        day: "numeric",
-                        month: "short",
-                        year: "numeric",
-                      })}
-                    </p>
-                    {(report.assignee || report.responseDueAt) && (
-                      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
-                        {report.assignee && <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1"><UserCheck className="h-3.5 w-3.5" /> {report.assignee.fullName}</span>}
-                        {report.responseDueAt && (
-                          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 ${!isReportClosed(report) && new Date(report.responseDueAt).getTime() < currentTimestamp ? "bg-red-100 text-red-800" : "bg-amber-50 text-amber-800"}`}>
-                            <CalendarClock className="h-3.5 w-3.5" /> {new Date(report.responseDueAt).toLocaleString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
-                          </span>
-                        )}
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm text-slate-500">
+                {filteredReports.length} laporan dalam {reportGroups.length} kelompok aset.
+              </p>
+              <p className="text-xs text-slate-400">Satu aset dapat memiliki beberapa masalah berbeda.</p>
+            </div>
+            {timelineWarning && (
+              <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+                {timelineWarning}
+              </p>
+            )}
+            {reportGroups.map((group) => {
+              const openReports = group.reports.filter((report) => !isReportClosed(report));
+              const highestRisk = group.reports.reduce((highest, report) =>
+                report.riskScore > highest.riskScore ? report : highest,
+              );
+              const reporterCount = new Set(
+                group.reports.map((report) => report.reporterId).filter(Boolean),
+              ).size;
+
+              return (
+                <section key={group.key} className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <div className="border-b border-slate-100 bg-gradient-to-r from-emerald-50 to-white p-4 sm:p-5">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-emerald-700">
+                          <Layers3 className="h-4 w-4" /> Kelompok QR / aset
+                        </p>
+                        <h2 className="mt-2 break-words text-lg font-bold text-slate-950">
+                          {group.assetName}{group.assetCode ? ` (${group.assetCode})` : ""}
+                        </h2>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">
+                          {group.reports[0].laboratory?.name ?? group.reports[0].location}
+                        </p>
                       </div>
-                    )}
+                      <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-slate-700 shadow-sm"><Clock3 className="h-3.5 w-3.5" /> {group.reports.length} laporan</span>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-slate-700 shadow-sm"><Users className="h-3.5 w-3.5" /> {reporterCount || group.reports.length} pelapor</span>
+                        <span className={`inline-flex rounded-full px-2.5 py-1 ${riskColors[highestRisk.riskCategory]}`}>Risiko tertinggi {highestRisk.riskScore}</span>
+                        {openReports.length > 0 && <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-amber-800">{openReports.length} belum selesai</span>}
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                    <span className="inline-flex rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">{REPORT_TYPE_LABELS[report.reportType]}</span>
-                    <span className="inline-flex rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-medium text-violet-700">{HAZARD_CATEGORY_LABELS[report.hazardCategory]}</span>
-                    {report.hazardActive && <span className="inline-flex rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-800">Bahaya aktif</span>}
-                    <span
-                      className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${riskColors[report.riskCategory]}`}
-                    >
-                      {capitalize(report.riskCategory)} &middot; {report.riskScore}
-                    </span>
-                    <span
-                      className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${statusColors[report.status]}`}
-                    >
-                      {statusLabels[report.status]}
-                    </span>
+
+                  <div className="p-4 sm:p-5">
+                    <p className="mb-4 text-xs leading-5 text-slate-500">
+                      Timeline ini mengelompokkan laporan berdasarkan aset. Detail setiap laporan tetap dipertahankan agar masalah berbeda tidak tertutup bersamaan.
+                    </p>
+                    <ol className="space-y-3" aria-label={`Timeline laporan ${group.assetName}`}>
+                      {group.reports.map((report) => {
+                        const contributor = contributorByReportId.get(report.id);
+                        const reward = getReportContributionReward(report.status);
+                        return (
+                          <li key={report.id} className="relative border-l-2 border-emerald-100 pl-4">
+                            <span className="absolute -left-[5px] top-4 h-2 w-2 rounded-full bg-emerald-600" aria-hidden="true" />
+                            <Link href={`/reports/${report.id}`} className="group block rounded-xl border border-slate-100 bg-slate-50 p-3 transition hover:border-emerald-200 hover:bg-emerald-50/60">
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                <div className="min-w-0">
+                                  <p className="break-words text-sm font-bold text-slate-900">{report.title}</p>
+                                  <p className="mt-1 text-xs text-slate-500">
+                                    {contributor?.fullName ?? "Pelapor"}
+                                    {contributor?.role ? ` · ${getRoleLabel(contributor.role)}` : ""}
+                                    {` · ${new Date(report.reportedAt).toLocaleString("id-ID", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`}
+                                  </p>
+                                </div>
+                                <ChevronRight className="hidden h-4 w-4 shrink-0 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-emerald-700 sm:block" />
+                              </div>
+                              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold">
+                                <span className={`rounded-full px-2.5 py-1 ${statusColors[report.status]}`}>{statusLabels[report.status]}</span>
+                                <span className={`rounded-full px-2.5 py-1 ${riskColors[report.riskCategory]}`}>{capitalize(report.riskCategory)} · {report.riskScore}</span>
+                                <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 ${reward.points > 0 ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-600"}`}>
+                                  <Award className="h-3.5 w-3.5" /> {reward.points > 0 ? `+${reward.points} poin` : reward.label}
+                                </span>
+                                {report.assignee && <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-slate-600"><UserCheck className="h-3.5 w-3.5" /> {report.assignee.fullName}</span>}
+                                {report.responseDueAt && <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 ${!isReportClosed(report) && new Date(report.responseDueAt).getTime() < currentTimestamp ? "bg-red-100 text-red-800" : "bg-amber-50 text-amber-800"}`}><CalendarClock className="h-3.5 w-3.5" /> {new Date(report.responseDueAt).toLocaleString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>}
+                              </div>
+                            </Link>
+                          </li>
+                        );
+                      })}
+                    </ol>
                   </div>
-                </div>
-              </Link>
-            ))}
+                </section>
+              );
+            })}
           </div>
         )}
       </div>
