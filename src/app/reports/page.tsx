@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertCircle, Award, CalendarClock, CheckSquare2, ChevronRight, Clock3, FileWarning, FolderKanban, Layers3, Loader2, MapPin, Plus, Search, ShieldAlert, SlidersHorizontal, Tag, UserCheck, Users, X } from "lucide-react";
+import { AlertCircle, Award, CalendarClock, CheckSquare2, ChevronDown, ChevronRight, Clock3, FileWarning, FolderKanban, Layers3, Loader2, MapPin, Plus, Search, ShieldAlert, SlidersHorizontal, Tag, UserCheck, Users, X } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import MobileFilterSheet from "@/components/mobile/MobileFilterSheet";
 import { fetchLaboratories, type LaboratorySummary } from "@/lib/assets";
@@ -48,7 +48,7 @@ const statusColors: Record<ReportStatus, string> = {
 };
 
 const caseStatusLabels: Record<ReportCaseSummary["status"], string> = {
-  terverifikasi: "Terverifikasi",
+  terverifikasi: "Dikelompokkan",
   dalam_penanganan: "Dalam Penanganan",
   menunggu_konfirmasi: "Menunggu Konfirmasi",
   selesai: "Selesai",
@@ -145,6 +145,7 @@ export default function ReportsPage() {
   const [canCreateCases, setCanCreateCases] = useState(false);
   const [selectedReportIds, setSelectedReportIds] = useState<string[]>([]);
   const [selectedGroupKey, setSelectedGroupKey] = useState("");
+  const [expandedSelectionGroupKey, setExpandedSelectionGroupKey] = useState("");
   const [showCaseForm, setShowCaseForm] = useState(false);
   const [caseTitle, setCaseTitle] = useState("");
   const [caseReason, setCaseReason] = useState("");
@@ -418,7 +419,7 @@ export default function ReportsPage() {
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.14em] text-emerald-300">Kasus Induk</p>
-                <h2 className="mt-1 text-xl font-bold">Penanganan laporan yang sudah diverifikasi serupa</h2>
+                <h2 className="mt-1 text-xl font-bold">Penanganan laporan yang dikelompokkan berdasarkan masalah serupa</h2>
               </div>
               <p className="text-xs text-emerald-100">{reportCases.length} kasus dalam cakupan akses Anda</p>
             </div>
@@ -486,6 +487,10 @@ export default function ReportsPage() {
             )}
             {reportGroups.map((group) => {
               const openReports = group.reports.filter((report) => !isReportClosed(report));
+              const selectableReports = openReports.filter(
+                (report) => report.assetId && !caseByReportId.has(report.id),
+              );
+              const selectionExpanded = expandedSelectionGroupKey === group.key;
               const highestRisk = group.reports.reduce((highest, report) =>
                 report.riskScore > highest.riskScore ? report : highest,
               );
@@ -515,7 +520,58 @@ export default function ReportsPage() {
                         {openReports.length > 0 && <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-amber-800">{openReports.length} belum selesai</span>}
                       </div>
                     </div>
+                    {canCreateCases && (
+                      <button
+                        type="button"
+                        disabled={selectableReports.length === 0}
+                        aria-expanded={selectionExpanded}
+                        onClick={() => setExpandedSelectionGroupKey(selectionExpanded ? "" : group.key)}
+                        className="mt-4 inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-white px-4 text-left text-sm font-bold text-emerald-800 transition hover:border-emerald-300 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400 sm:w-auto"
+                      >
+                        <span>{selectableReports.length > 0 ? `Pilih laporan aktif (${selectableReports.length})` : "Tidak ada laporan aktif yang dapat dipilih"}</span>
+                        <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${selectionExpanded ? "rotate-180" : ""}`} />
+                      </button>
+                    )}
                   </div>
+
+                  {canCreateCases && selectionExpanded && (
+                    <div className="border-b border-emerald-100 bg-emerald-50/60 p-4 sm:p-5">
+                      {selectedGroupKey === group.key && selectedReportIds.length > 0 && (
+                        <div className="sticky top-3 z-20 mb-4 flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-white/95 p-3 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-slate-900">{selectedReportIds.length} laporan dipilih</p>
+                            <p className="text-xs text-slate-500">
+                              {selectedReportIds.length < 2
+                                ? "Pilih satu laporan serupa lagi dari aset ini."
+                                : "Siap dikelompokkan menjadi satu Kasus Induk."}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 gap-2">
+                            <button type="button" onClick={() => { setSelectedReportIds([]); setSelectedGroupKey(""); setCaseTitle(""); setCaseReason(""); setCaseError(""); }} className="grid h-11 w-11 place-items-center rounded-xl border border-slate-200 text-slate-500" aria-label="Batalkan pilihan"><X className="h-4 w-4" /></button>
+                            <button type="button" disabled={selectedReportIds.length < 2} onClick={() => setShowCaseForm(true)} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white disabled:bg-emerald-300 sm:flex-none"><CheckSquare2 className="h-4 w-4" /> Buat Kasus</button>
+                          </div>
+                        </div>
+                      )}
+                      <p className="mb-3 text-xs leading-5 text-emerald-900/70">Laporan aktif diurutkan dari yang terbaru. Pilih minimal dua laporan yang membahas masalah yang sama.</p>
+                      <div className="space-y-2">
+                        {selectableReports.map((report) => {
+                          const contributor = contributorByReportId.get(report.id);
+                          return (
+                            <label key={report.id} className="flex min-h-14 cursor-pointer items-start gap-3 rounded-xl border border-emerald-100 bg-white p-3 transition hover:border-emerald-300">
+                              <input type="checkbox" className="mt-1 h-5 w-5 shrink-0 accent-emerald-700" checked={selectedReportIds.includes(report.id)} onChange={() => toggleReportSelection(report, group)} aria-label={`Pilih laporan ${report.title}`} />
+                              <span className="min-w-0 flex-1">
+                                <span className="block break-words text-sm font-bold text-slate-900">{report.title}</span>
+                                <span className="mt-1 block text-xs leading-5 text-slate-500">
+                                  {contributor?.fullName ?? "Pelapor"} · {new Date(report.reportedAt).toLocaleString("id-ID", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                              </span>
+                              <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${riskColors[report.riskCategory]}`}>{report.riskScore}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="p-4 sm:p-5">
                     <p className="mb-4 text-xs leading-5 text-slate-500">
@@ -533,11 +589,6 @@ export default function ReportsPage() {
                           <li key={report.id} className="relative border-l-2 border-emerald-100 pl-4">
                             <span className="absolute -left-[5px] top-4 h-2 w-2 rounded-full bg-emerald-600" aria-hidden="true" />
                             <div className="flex items-start gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3 transition hover:border-emerald-200 hover:bg-emerald-50/60">
-                              {canCreateCases && report.assetId && !linkedCase && !isReportClosed(report) && (
-                                <label className="mt-0.5 grid min-h-10 min-w-10 cursor-pointer place-items-center rounded-xl border border-slate-200 bg-white" title="Pilih laporan untuk Kasus Induk">
-                                  <input type="checkbox" className="h-4 w-4 accent-emerald-700" checked={selectedReportIds.includes(report.id)} onChange={() => toggleReportSelection(report, group)} aria-label={`Pilih laporan ${report.title}`} />
-                                </label>
-                              )}
                               <Link href={`/reports/${report.id}`} className="group min-w-0 flex-1">
                               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                                 <div className="min-w-0">
@@ -575,19 +626,10 @@ export default function ReportsPage() {
           </div>
         )}
       </div>
-      {canCreateCases && selectedReportIds.length > 0 && (
-        <div className="fixed inset-x-3 bottom-20 z-40 mx-auto flex max-w-xl items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-white p-3 shadow-2xl sm:bottom-6">
-          <div className="min-w-0"><p className="text-sm font-bold text-slate-900">{selectedReportIds.length} laporan dipilih</p><p className="truncate text-xs text-slate-500">Pilih minimal dua laporan dengan masalah yang sama.</p></div>
-          <div className="flex shrink-0 gap-2">
-            <button type="button" onClick={() => { setSelectedReportIds([]); setSelectedGroupKey(""); setCaseTitle(""); setCaseReason(""); setCaseError(""); }} className="grid h-11 w-11 place-items-center rounded-xl border border-slate-200 text-slate-500" aria-label="Batalkan pilihan"><X className="h-4 w-4" /></button>
-            <button type="button" disabled={selectedReportIds.length < 2} onClick={() => setShowCaseForm(true)} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white disabled:bg-emerald-300"><CheckSquare2 className="h-4 w-4" /> Buat Kasus</button>
-          </div>
-        </div>
-      )}
       {showCaseForm && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/50 p-3 sm:items-center" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowCaseForm(false); }}>
           <form onSubmit={handleCreateCase} className="w-full max-w-lg rounded-[24px] bg-white p-5 shadow-2xl sm:p-6" role="dialog" aria-modal="true" aria-labelledby="case-form-title">
-            <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.14em] text-emerald-700">Grouping terverifikasi</p><h2 id="case-form-title" className="mt-1 text-xl font-bold text-slate-950">Buat Kasus Induk</h2></div><button type="button" onClick={() => setShowCaseForm(false)} className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100 text-slate-600" aria-label="Tutup"><X className="h-4 w-4" /></button></div>
+            <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.14em] text-emerald-700">Grouping laporan</p><h2 id="case-form-title" className="mt-1 text-xl font-bold text-slate-950">Buat Kasus Induk</h2></div><button type="button" onClick={() => setShowCaseForm(false)} className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100 text-slate-600" aria-label="Tutup"><X className="h-4 w-4" /></button></div>
             <p className="mt-3 text-sm leading-6 text-slate-600">Laporan asli tetap tersimpan. Pastikan seluruh pilihan membahas masalah yang sama, bukan hanya aset yang sama.</p>
             <label className="mt-4 block text-sm font-semibold text-slate-700">Judul kasus<input value={caseTitle} onChange={(event) => setCaseTitle(event.target.value)} maxLength={160} required className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-emerald-500" /></label>
             <label className="mt-4 block text-sm font-semibold text-slate-700">Alasan pengelompokan<textarea value={caseReason} onChange={(event) => setCaseReason(event.target.value)} rows={4} maxLength={1000} required placeholder="Jelaskan komponen, kondisi, dan bukti yang menunjukkan laporan-laporan ini merujuk masalah yang sama." className="mt-2 w-full resize-y rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-emerald-500" /></label>
