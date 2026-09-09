@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertCircle, Award, CalendarClock, CheckSquare2, ChevronDown, ChevronRight, Clock3, FileWarning, FolderKanban, Layers3, Loader2, MapPin, Plus, Search, ShieldAlert, SlidersHorizontal, Tag, UserCheck, Users, X } from "lucide-react";
@@ -54,6 +55,8 @@ const caseStatusLabels: Record<ReportCaseSummary["status"], string> = {
   selesai: "Selesai",
   dibuka_kembali: "Dikembalikan",
 };
+
+const REPORT_GROUP_BATCH_SIZE = 6;
 
 function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
@@ -151,6 +154,8 @@ export default function ReportsPage() {
   const [caseReason, setCaseReason] = useState("");
   const [caseError, setCaseError] = useState("");
   const [caseSaving, setCaseSaving] = useState(false);
+  const [visibleGroupCount, setVisibleGroupCount] = useState(REPORT_GROUP_BATCH_SIZE);
+  const [expandedTimelineGroupKeys, setExpandedTimelineGroupKeys] = useState<string[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -235,6 +240,7 @@ export default function ReportsPage() {
   );
 
   const reportGroups = useMemo(() => groupReportsByAsset(filteredReports), [filteredReports]);
+  const visibleReportGroups = reportGroups.slice(0, visibleGroupCount);
 
   const pendingMobileResultCount = useMemo(() => reports.filter((report) => {
     const term = search.trim().toLowerCase();
@@ -485,12 +491,13 @@ export default function ReportsPage() {
                 {timelineWarning}
               </p>
             )}
-            {reportGroups.map((group) => {
+            {visibleReportGroups.map((group) => {
               const openReports = group.reports.filter((report) => !isReportClosed(report));
               const selectableReports = openReports.filter(
                 (report) => report.assetId && !caseByReportId.has(report.id),
               );
               const selectionExpanded = expandedSelectionGroupKey === group.key;
+              const timelineExpanded = expandedTimelineGroupKeys.includes(group.key);
               const highestRisk = group.reports.reduce((highest, report) =>
                 report.riskScore > highest.riskScore ? report : highest,
               );
@@ -523,12 +530,18 @@ export default function ReportsPage() {
                     {canCreateCases && (
                       <button
                         type="button"
-                        disabled={selectableReports.length === 0}
+                        disabled={selectableReports.length < 2}
                         aria-expanded={selectionExpanded}
                         onClick={() => setExpandedSelectionGroupKey(selectionExpanded ? "" : group.key)}
                         className="mt-4 inline-flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-white px-4 text-left text-sm font-bold text-emerald-800 transition hover:border-emerald-300 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-50 disabled:text-slate-400 sm:w-auto"
                       >
-                        <span>{selectableReports.length > 0 ? `Pilih laporan aktif (${selectableReports.length})` : "Tidak ada laporan aktif yang dapat dipilih"}</span>
+                        <span>
+                          {selectableReports.length >= 2
+                            ? `Pilih laporan aktif (${selectableReports.length})`
+                            : selectableReports.length === 1
+                              ? "Belum cukup untuk grouping (1/2)"
+                              : "Tidak ada laporan aktif yang dapat dipilih"}
+                        </span>
                         <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${selectionExpanded ? "rotate-180" : ""}`} />
                       </button>
                     )}
@@ -574,10 +587,21 @@ export default function ReportsPage() {
                   )}
 
                   <div className="p-4 sm:p-5">
-                    <p className="mb-4 text-xs leading-5 text-slate-500">
+                    <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <p className="text-xs leading-5 text-slate-500">
                       Timeline ini mengelompokkan laporan berdasarkan aset. Detail setiap laporan tetap dipertahankan agar masalah berbeda tidak tertutup bersamaan.
-                    </p>
-                    <ol className="space-y-3" aria-label={`Timeline laporan ${group.assetName}`}>
+                      </p>
+                      <button
+                        type="button"
+                        aria-expanded={timelineExpanded}
+                        onClick={() => setExpandedTimelineGroupKeys((current) => current.includes(group.key) ? current.filter((key) => key !== group.key) : [...current, group.key])}
+                        className="inline-flex min-h-11 w-full shrink-0 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-700 md:hidden"
+                      >
+                        {timelineExpanded ? "Tutup timeline" : `Lihat ${group.reports.length} laporan`}
+                        <ChevronDown className={`h-4 w-4 transition-transform ${timelineExpanded ? "rotate-180" : ""}`} />
+                      </button>
+                    </div>
+                    <ol className={`${timelineExpanded ? "" : "hidden"} space-y-3 md:block`} aria-label={`Timeline laporan ${group.assetName}`}>
                       {group.reports.map((report) => {
                         const contributor = contributorByReportId.get(report.id);
                         const linkedCase = caseByReportId.get(report.id);
@@ -623,12 +647,21 @@ export default function ReportsPage() {
                 </section>
               );
             })}
+            {visibleGroupCount < reportGroups.length && (
+              <button
+                type="button"
+                onClick={() => setVisibleGroupCount((count) => count + REPORT_GROUP_BATCH_SIZE)}
+                className="min-h-12 w-full rounded-2xl border border-emerald-200 bg-white px-4 text-sm font-bold text-emerald-800 shadow-sm hover:bg-emerald-50"
+              >
+                Tampilkan {Math.min(REPORT_GROUP_BATCH_SIZE, reportGroups.length - visibleGroupCount)} kelompok berikutnya
+              </button>
+            )}
           </div>
         )}
       </div>
-      {showCaseForm && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/50 p-3 sm:items-center" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowCaseForm(false); }}>
-          <form onSubmit={handleCreateCase} className="w-full max-w-lg rounded-[24px] bg-white p-5 shadow-2xl sm:p-6" role="dialog" aria-modal="true" aria-labelledby="case-form-title">
+      {showCaseForm && typeof document !== "undefined" && createPortal(
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/50 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:items-center sm:p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowCaseForm(false); }}>
+          <form onSubmit={handleCreateCase} className="max-h-[calc(100dvh-1rem)] w-full max-w-lg overflow-y-auto rounded-[24px] bg-white p-5 shadow-2xl sm:max-h-[calc(100dvh-2rem)] sm:p-6" role="dialog" aria-modal="true" aria-labelledby="case-form-title">
             <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.14em] text-emerald-700">Grouping laporan</p><h2 id="case-form-title" className="mt-1 text-xl font-bold text-slate-950">Buat Kasus Induk</h2></div><button type="button" onClick={() => setShowCaseForm(false)} className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100 text-slate-600" aria-label="Tutup"><X className="h-4 w-4" /></button></div>
             <p className="mt-3 text-sm leading-6 text-slate-600">Laporan asli tetap tersimpan. Pastikan seluruh pilihan membahas masalah yang sama, bukan hanya aset yang sama.</p>
             <label className="mt-4 block text-sm font-semibold text-slate-700">Judul kasus<input value={caseTitle} onChange={(event) => setCaseTitle(event.target.value)} maxLength={160} required className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-emerald-500" /></label>
@@ -636,7 +669,8 @@ export default function ReportsPage() {
             {caseError && <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{caseError}</p>}
             <button type="submit" disabled={caseSaving || selectedReportIds.length < 2 || caseTitle.trim().length < 5 || caseReason.trim().length < 10} className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white disabled:bg-emerald-300">{caseSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderKanban className="h-4 w-4" />}{caseSaving ? "Membuat kasus..." : `Gabungkan ${selectedReportIds.length} laporan`}</button>
           </form>
-        </div>
+        </div>,
+        document.body,
       )}
       <MobileFilterSheet open={showMobileFilters} title="Filter laporan" resultCount={pendingMobileResultCount} onClose={() => setShowMobileFilters(false)} onReset={() => { setDraftRiskFilter("semua"); setDraftLaboratoryFilter("semua"); setDraftTypeFilter("semua"); setDraftCategoryFilter("semua"); setDraftAssignmentFilter("semua"); }} onApply={() => { setRiskFilter(draftRiskFilter); setLaboratoryFilter(draftLaboratoryFilter); setTypeFilter(draftTypeFilter); setCategoryFilter(draftCategoryFilter); setAssignmentFilter(draftAssignmentFilter); setShowMobileFilters(false); }}>
         <label className="text-sm font-semibold text-slate-700">Tingkat bahaya<select value={draftRiskFilter} onChange={(event) => setDraftRiskFilter(event.target.value as "semua" | RiskLevel)} className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"><option value="semua">Semua tingkat risiko</option><option value="kritis">Kritis</option><option value="tinggi">Tinggi</option><option value="sedang">Sedang</option><option value="rendah">Rendah</option></select></label>
