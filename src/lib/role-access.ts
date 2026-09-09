@@ -49,6 +49,14 @@ export function canEditReportStatus(role: UserRole): boolean {
   return role === "teknisi" || role === "admin";
 }
 
+export function canCreateReportCase(role: UserRole): boolean {
+  return role === "teknisi" || role === "admin";
+}
+
+export function canConfirmReportCase(role: UserRole): boolean {
+  return role === "kepala_lab" || role === "admin";
+}
+
 /** Admin is global; teknisi may manage assets only inside their assigned lab. */
 export function canManageAssetData(
   role: UserRole,

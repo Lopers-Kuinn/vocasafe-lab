@@ -237,7 +237,7 @@ export interface ReportContributor {
 
 export interface ReportContributionReward {
   points: number;
-  label: "Menunggu verifikasi" | "Kontribusi terverifikasi" | "Penanganan selesai" | "Tidak diberikan";
+  label: "Menunggu verifikasi" | "Kontribusi terverifikasi" | "Penanganan selesai" | "Tidak diberikan" | "Reward khusus mahasiswa";
 }
 
 export interface AssetOpenReportSummary {
@@ -245,6 +245,56 @@ export interface AssetOpenReportSummary {
   openReportCount: number;
   openCriticalReportCount: number;
   lastReportedAt: string | null;
+}
+
+export type ReportCaseStatus =
+  | "terverifikasi"
+  | "dalam_penanganan"
+  | "menunggu_konfirmasi"
+  | "selesai"
+  | "dibuka_kembali";
+
+export interface ReportCaseSummary {
+  id: string;
+  caseNumber: string;
+  laboratoryId: string;
+  laboratoryName: string;
+  assetId: string;
+  assetCode: string;
+  assetName: string;
+  title: string;
+  groupingReason: string;
+  status: ReportCaseStatus;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  confirmedBy: string | null;
+  confirmedAt: string | null;
+  memberCount: number;
+  reporterCount: number;
+  highestRiskScore: number;
+  highestRiskCategory: RiskLevel;
+  memberReportIds: string[];
+}
+
+export interface ReportCaseEvent {
+  id: string;
+  eventType: "dibuat" | "mulai_ditangani" | "diajukan_konfirmasi" | "dikonfirmasi" | "dikembalikan";
+  note: string;
+  actorName: string;
+  actorRole: UserRole | null;
+  createdAt: string;
+}
+
+export interface ReportChangeRequest {
+  id: string;
+  reportId: string;
+  requestType: "koreksi" | "penarikan";
+  detail: string;
+  status: "diajukan" | "diterima" | "ditolak";
+  reviewNote: string;
+  createdAt: string;
+  reviewedAt: string | null;
 }
 
 export interface DatabaseReport {
@@ -297,7 +347,11 @@ export type ReportResponseAssignee = ReportAssigneeSummary;
 
 export function getReportContributionReward(
   status: ReportStatus,
+  reporterRole: UserRole | null,
 ): ReportContributionReward {
+  if (reporterRole !== "mahasiswa") {
+    return { points: 0, label: "Reward khusus mahasiswa" };
+  }
   if (status === "selesai") return { points: 15, label: "Penanganan selesai" };
   if (status === "diverifikasi" || status === "dalam_penanganan") {
     return { points: 10, label: "Kontribusi terverifikasi" };
@@ -572,6 +626,215 @@ export async function fetchAssetOpenReportSummary(
     };
   } catch {
     return { summary: null, error: "Ringkasan laporan aktif belum dapat diperiksa." };
+  }
+}
+
+export async function fetchReportCases(): Promise<{
+  cases: ReportCaseSummary[];
+  error: string | null;
+}> {
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase.rpc("get_report_case_summaries");
+    if (error) {
+      const unavailable =
+        error.code === "PGRST202" ||
+        /get_report_case_summaries.*not found|could not find the function/i.test(error.message);
+      return {
+        cases: [],
+        error: unavailable
+          ? "Kasus Induk tersedia setelah migration 017 diterapkan."
+          : "Daftar Kasus Induk belum dapat dimuat.",
+      };
+    }
+
+    return {
+      cases: ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+        id: String(row.id),
+        caseNumber: String(row.case_number),
+        laboratoryId: String(row.laboratory_id),
+        laboratoryName: String(row.laboratory_name),
+        assetId: String(row.asset_id),
+        assetCode: String(row.asset_code),
+        assetName: String(row.asset_name),
+        title: String(row.title),
+        groupingReason: String(row.grouping_reason),
+        status: row.status as ReportCaseStatus,
+        createdBy: String(row.created_by),
+        createdAt: String(row.created_at),
+        updatedAt: String(row.updated_at),
+        confirmedBy: row.confirmed_by ? String(row.confirmed_by) : null,
+        confirmedAt: row.confirmed_at ? String(row.confirmed_at) : null,
+        memberCount: Number(row.member_count) || 0,
+        reporterCount: Number(row.reporter_count) || 0,
+        highestRiskScore: Number(row.highest_risk_score) || 0,
+        highestRiskCategory: row.highest_risk_category as RiskLevel,
+        memberReportIds: Array.isArray(row.member_report_ids)
+          ? row.member_report_ids.map(String)
+          : [],
+      })),
+      error: null,
+    };
+  } catch {
+    return { cases: [], error: "Daftar Kasus Induk belum dapat dimuat." };
+  }
+}
+
+export async function fetchReportCaseEvents(
+  caseId: string,
+): Promise<{ events: ReportCaseEvent[]; error: string | null }> {
+  if (!UUID_PATTERN.test(caseId)) return { events: [], error: "ID kasus tidak valid." };
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase.rpc("get_report_case_events", {
+      target_case_id: caseId,
+    });
+    if (error) return { events: [], error: "Timeline kasus belum dapat dimuat." };
+    return {
+      events: ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+        id: String(row.id),
+        eventType: row.event_type as ReportCaseEvent["eventType"],
+        note: String(row.note),
+        actorName: String(row.actor_name),
+        actorRole: (row.actor_role as UserRole | null) ?? null,
+        createdAt: String(row.created_at),
+      })),
+      error: null,
+    };
+  } catch {
+    return { events: [], error: "Timeline kasus belum dapat dimuat." };
+  }
+}
+
+export async function createReportCase(input: {
+  reportIds: string[];
+  title: string;
+  reason: string;
+}): Promise<{ caseId: string | null; error: string | null }> {
+  const reportIds = [...new Set(input.reportIds.filter((id) => UUID_PATTERN.test(id)))];
+  if (reportIds.length < 2) return { caseId: null, error: "Pilih minimal dua laporan." };
+  if (input.title.trim().length < 5 || input.reason.trim().length < 10) {
+    return { caseId: null, error: "Judul dan alasan pengelompokan perlu diperjelas." };
+  }
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase.rpc("create_report_case", {
+      target_report_ids: reportIds,
+      case_title: input.title.trim(),
+      grouping_reason: input.reason.trim(),
+    });
+    if (error || typeof data !== "string") {
+      return { caseId: null, error: error?.message ?? "Kasus Induk belum berhasil dibuat." };
+    }
+    return { caseId: data, error: null };
+  } catch {
+    return { caseId: null, error: "Kasus Induk belum berhasil dibuat." };
+  }
+}
+
+export async function transitionReportCase(input: {
+  caseId: string;
+  status: ReportCaseStatus;
+  note: string;
+}): Promise<{ saved: boolean; error: string | null }> {
+  if (!UUID_PATTERN.test(input.caseId) || input.note.trim().length < 5) {
+    return { saved: false, error: "Kasus atau catatan perubahan tidak valid." };
+  }
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase.rpc("transition_report_case", {
+      target_case_id: input.caseId,
+      next_status: input.status,
+      transition_note: input.note.trim(),
+    });
+    return error || data !== input.status
+      ? { saved: false, error: error?.message ?? "Status kasus belum berhasil diperbarui." }
+      : { saved: true, error: null };
+  } catch {
+    return { saved: false, error: "Status kasus belum berhasil diperbarui." };
+  }
+}
+
+export async function fetchReportChangeRequests(
+  reportId: string,
+): Promise<{ requests: ReportChangeRequest[]; error: string | null }> {
+  if (!UUID_PATTERN.test(reportId)) return { requests: [], error: null };
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase
+      .from("report_change_requests")
+      .select("id,report_id,request_type,detail,status,review_note,created_at,reviewed_at")
+      .eq("report_id", reportId)
+      .order("created_at", { ascending: false });
+    if (error) {
+      return {
+        requests: [],
+        error: /report_change_requests|schema cache/i.test(error.message)
+          ? "Permintaan koreksi tersedia setelah migration 017 diterapkan."
+          : "Riwayat permintaan belum dapat dimuat.",
+      };
+    }
+    return {
+      requests: ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+        id: String(row.id),
+        reportId: String(row.report_id),
+        requestType: row.request_type as ReportChangeRequest["requestType"],
+        detail: String(row.detail),
+        status: row.status as ReportChangeRequest["status"],
+        reviewNote: row.review_note ? String(row.review_note) : "",
+        createdAt: String(row.created_at),
+        reviewedAt: row.reviewed_at ? String(row.reviewed_at) : null,
+      })),
+      error: null,
+    };
+  } catch {
+    return { requests: [], error: "Riwayat permintaan belum dapat dimuat." };
+  }
+}
+
+export async function submitReportChangeRequest(input: {
+  reportId: string;
+  type: ReportChangeRequest["requestType"];
+  detail: string;
+}): Promise<{ saved: boolean; error: string | null }> {
+  if (!UUID_PATTERN.test(input.reportId) || input.detail.trim().length < 10) {
+    return { saved: false, error: "Alasan permintaan minimal 10 karakter." };
+  }
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase.rpc("submit_report_change_request", {
+      target_report_id: input.reportId,
+      target_request_type: input.type,
+      request_detail: input.detail.trim(),
+    });
+    return error || typeof data !== "string"
+      ? { saved: false, error: error?.message ?? "Permintaan belum berhasil dikirim." }
+      : { saved: true, error: null };
+  } catch {
+    return { saved: false, error: "Permintaan belum berhasil dikirim." };
+  }
+}
+
+export async function reviewReportChangeRequest(input: {
+  requestId: string;
+  decision: "diterima" | "ditolak";
+  note: string;
+}): Promise<{ saved: boolean; error: string | null }> {
+  if (!UUID_PATTERN.test(input.requestId) || input.note.trim().length < 5) {
+    return { saved: false, error: "Keputusan dan catatan wajib diisi." };
+  }
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase.rpc("review_report_change_request", {
+      target_request_id: input.requestId,
+      decision: input.decision,
+      decision_note: input.note.trim(),
+    });
+    return error || data !== input.decision
+      ? { saved: false, error: error?.message ?? "Keputusan belum berhasil disimpan." }
+      : { saved: true, error: null };
+  } catch {
+    return { saved: false, error: "Keputusan belum berhasil disimpan." };
   }
 }
 
