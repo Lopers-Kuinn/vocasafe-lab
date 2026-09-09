@@ -13,8 +13,11 @@ import {
   EyeOff,
   ExternalLink,
   ImageIcon,
+  FileLock2,
+  FolderKanban,
   Loader2,
   Save,
+  Send,
   ShieldCheck,
   Siren,
   UserCheck,
@@ -25,6 +28,9 @@ import { getCurrentUserProfile } from "@/lib/auth";
 import { canEditReportStatus } from "@/lib/role-access";
 import {
   fetchReportById,
+  fetchReportCases,
+  fetchReportChangeRequests,
+  fetchReportContributors,
   fetchReportFollowUps,
   fetchReportResponseAssignees,
   getReportContributionReward,
@@ -32,7 +38,12 @@ import {
   planReportResponse,
   REPORT_TYPE_LABELS,
   saveReportFollowUp,
+  submitReportChangeRequest,
+  reviewReportChangeRequest,
   type DatabaseReport,
+  type ReportCaseSummary,
+  type ReportChangeRequest,
+  type ReportContributor,
   type ReportFollowUp,
   type ReportResponseAssignee,
 } from "@/lib/reports";
@@ -123,6 +134,18 @@ export default function ReportDetailPage() {
     "success",
   );
   const [currentTimestamp, setCurrentTimestamp] = useState(0);
+  const [reportContributor, setReportContributor] = useState<ReportContributor | null>(null);
+  const [linkedCase, setLinkedCase] = useState<ReportCaseSummary | null>(null);
+  const [changeRequests, setChangeRequests] = useState<ReportChangeRequest[]>([]);
+  const [changeRequestError, setChangeRequestError] = useState("");
+  const [changeRequestType, setChangeRequestType] = useState<ReportChangeRequest["requestType"]>("koreksi");
+  const [changeRequestDetail, setChangeRequestDetail] = useState("");
+  const [changeRequestSaving, setChangeRequestSaving] = useState(false);
+  const [changeRequestFeedback, setChangeRequestFeedback] = useState("");
+  const [changeRequestFeedbackKind, setChangeRequestFeedbackKind] = useState<"success" | "error">("success");
+  const [reviewingRequestId, setReviewingRequestId] = useState("");
+  const [reviewNote, setReviewNote] = useState("");
+  const [reviewSaving, setReviewSaving] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -131,7 +154,10 @@ export default function ReportDetailPage() {
       fetchReportById(id),
       fetchReportFollowUps(id),
       getCurrentUserProfile(),
-    ]).then(([result, followUpResult, profileResult]) => {
+      fetchReportContributors([id]),
+      fetchReportCases(),
+      fetchReportChangeRequests(id),
+    ]).then(([result, followUpResult, profileResult, contributorResult, caseResult, requestResult]) => {
       if (!active) return;
       setReport(result.report);
       if (result.report) {
@@ -157,6 +183,10 @@ export default function ReportDetailPage() {
           : "",
       );
       setCurrentUser(profileResult.user);
+      setReportContributor(contributorResult.contributors[0] ?? null);
+      setLinkedCase(caseResult.cases.find((item) => item.memberReportIds.includes(id)) ?? null);
+      setChangeRequests(requestResult.requests);
+      setChangeRequestError(requestResult.error ?? "");
       setCurrentTimestamp(Date.now());
       setLoading(false);
 
@@ -185,6 +215,7 @@ export default function ReportDetailPage() {
   }, []);
 
   const canUpdate = currentUser ? canEditReportStatus(currentUser.role) : false;
+  const canUpdateIndividual = canUpdate && !linkedCase;
   const reportClosed = report?.status === "selesai" || report?.status === "ditolak";
   const responseOverdue = Boolean(
     report?.responseDueAt &&
@@ -196,7 +227,7 @@ export default function ReportDetailPage() {
     event.preventDefault();
     setResponseFeedback("");
 
-    if (!report || !canUpdate || reportClosed) return;
+    if (!report || !canUpdateIndividual || reportClosed) return;
     if (!responseAssigneeId) {
       setResponseFeedbackKind("error");
       setResponseFeedback("Pilih PIC respons terlebih dahulu.");
@@ -258,7 +289,7 @@ export default function ReportDetailPage() {
     event.preventDefault();
     setFeedback("");
 
-    if (!report || !canUpdate) return;
+    if (!report || !canUpdateIndividual) return;
     if (!followUpNote.trim()) {
       setFeedbackKind("error");
       setFeedback("Catatan tindak lanjut wajib diisi.");
@@ -364,7 +395,65 @@ export default function ReportDetailPage() {
     );
   }
 
-  const contributionReward = getReportContributionReward(report.status);
+  async function handleSubmitChangeRequest(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!report) return;
+    setChangeRequestFeedback("");
+    setChangeRequestSaving(true);
+    const result = await submitReportChangeRequest({
+      reportId: report.id,
+      type: changeRequestType,
+      detail: changeRequestDetail,
+    });
+    if (result.error) {
+      setChangeRequestFeedbackKind("error");
+      setChangeRequestFeedback(result.error);
+    } else {
+      const refreshed = await fetchReportChangeRequests(report.id);
+      setChangeRequests(refreshed.requests);
+      setChangeRequestDetail("");
+      setChangeRequestFeedbackKind("success");
+      setChangeRequestFeedback("Permintaan tercatat tanpa mengubah laporan asli.");
+    }
+    setChangeRequestSaving(false);
+  }
+
+  async function handleReviewChangeRequest(decision: "diterima" | "ditolak") {
+    if (!report || !reviewingRequestId) return;
+    setChangeRequestFeedback("");
+    setReviewSaving(true);
+    const result = await reviewReportChangeRequest({
+      requestId: reviewingRequestId,
+      decision,
+      note: reviewNote,
+    });
+    if (result.error) {
+      setChangeRequestFeedbackKind("error");
+      setChangeRequestFeedback(result.error);
+    } else {
+      const [reportResult, requestResult, followUpResult] = await Promise.all([
+        fetchReportById(report.id),
+        fetchReportChangeRequests(report.id),
+        fetchReportFollowUps(report.id),
+      ]);
+      if (reportResult.report) {
+        setReport(reportResult.report);
+        setSelectedStatus(reportResult.report.status);
+      }
+      setChangeRequests(requestResult.requests);
+      setFollowUps(followUpResult.followUps);
+      setReviewingRequestId("");
+      setReviewNote("");
+      setChangeRequestFeedbackKind("success");
+      setChangeRequestFeedback(`Permintaan ${decision}. Laporan asli tetap tersimpan.`);
+    }
+    setReviewSaving(false);
+  }
+
+  const contributionReward = getReportContributionReward(
+    report.status,
+    reportContributor?.role ?? null,
+  );
 
   return (
     <AppShell>
@@ -388,6 +477,7 @@ export default function ReportDetailPage() {
           {report.hazardActive && report.status !== "selesai" && <p className="mt-4 rounded-2xl bg-white/80 p-3 text-sm font-semibold leading-5 text-red-800">Amankan area dan jangan melanjutkan aktivitas sampai petugas menyatakan kondisi aman.</p>}
         </section>
 
+        {reportContributor?.role === "mahasiswa" && (
         <section className="rounded-[24px] border border-amber-200 bg-gradient-to-r from-amber-50 to-white p-5 shadow-sm">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-start gap-3">
@@ -408,6 +498,15 @@ export default function ReportDetailPage() {
             </div>
           </div>
         </section>
+        )}
+
+        {linkedCase && (
+          <Link href={`/reports/cases/${linkedCase.id}`} className="flex items-start gap-3 rounded-[24px] border border-emerald-200 bg-emerald-950 p-5 text-white shadow-sm transition hover:bg-emerald-900">
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white/10 text-emerald-200"><FolderKanban className="h-5 w-5" /></span>
+            <span className="min-w-0 flex-1"><span className="text-xs font-bold uppercase tracking-[0.14em] text-emerald-300">Terhubung ke Kasus Induk</span><span className="mt-1 block break-words font-bold">{linkedCase.title}</span><span className="mt-1 block text-xs text-emerald-100">{linkedCase.caseNumber} · {linkedCase.memberCount} laporan terkait</span></span>
+            <ExternalLink className="mt-1 h-4 w-4 shrink-0 text-emerald-200" />
+          </Link>
+        )}
 
         <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -460,7 +559,7 @@ export default function ReportDetailPage() {
             </div>
           </dl>
 
-          {canUpdate && !reportClosed && (
+          {canUpdateIndividual && !reportClosed && (
             <form onSubmit={handlePlanResponse} className="mt-6 space-y-4 border-t border-slate-200 pt-5">
               <div>
                 <h3 className="font-bold text-slate-900">Akui dan rencanakan respons</h3>
@@ -585,6 +684,11 @@ export default function ReportDetailPage() {
             </div>
           </div>
 
+          <div className="mt-5 flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <FileLock2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" />
+            <div><p className="font-semibold text-slate-800">Laporan asli dikunci setelah dikirim</p><p className="mt-1 text-sm leading-6 text-slate-600">Judul, deskripsi, aset, bukti, dan nilai risiko awal tidak dapat ditimpa atau dihapus. Koreksi dan penarikan dicatat sebagai permintaan agar jejak audit tetap utuh.</p></div>
+          </div>
+
           <dl className="mt-5 grid gap-4 text-sm sm:grid-cols-2">
             <div>
               <dt className="font-medium text-slate-700">Jenis laporan</dt>
@@ -664,6 +768,24 @@ export default function ReportDetailPage() {
             </div>
             <p className="mt-3 text-sm text-slate-600">{report.recommendation}</p>
           </div>
+        </section>
+
+
+        <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="flex items-start gap-3"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-700"><FileLock2 className="h-5 w-5" /></span><div><h2 className="text-lg font-bold text-slate-900">Koreksi & Penarikan</h2><p className="mt-1 text-sm leading-6 text-slate-500">Permintaan tidak menghapus atau menimpa isi laporan awal.</p></div></div>
+
+          {changeRequestError && <p role="status" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{changeRequestError}</p>}
+          {changeRequestFeedback && <p role={changeRequestFeedbackKind === "error" ? "alert" : "status"} className={`mt-4 rounded-xl border p-3 text-sm ${changeRequestFeedbackKind === "error" ? "border-red-200 bg-red-50 text-red-700" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`}>{changeRequestFeedback}</p>}
+
+          {changeRequests.length > 0 && <ol className="mt-5 space-y-3">{changeRequests.map((request) => <li key={request.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-white px-2.5 py-1 text-xs font-bold capitalize text-slate-700">{request.requestType}</span><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${request.status === "diajukan" ? "bg-amber-100 text-amber-800" : request.status === "diterima" ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}`}>{request.status === "diajukan" ? "Menunggu keputusan" : request.status === "diterima" ? "Diterima" : "Ditolak"}</span><time className="text-xs text-slate-400">{new Date(request.createdAt).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}</time></div><p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700">{request.detail}</p>{request.reviewNote && <p className="mt-3 rounded-xl bg-white p-3 text-sm text-slate-600"><span className="font-semibold">Keputusan petugas:</span> {request.reviewNote}</p>}{canUpdate && request.status === "diajukan" && (reviewingRequestId === request.id ? <div className="mt-4 space-y-3"><textarea value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} rows={3} placeholder="Alasan keputusan..." className="w-full resize-y rounded-xl border border-slate-300 p-3 text-sm" /><div className="flex flex-wrap gap-2"><button type="button" disabled={reviewSaving || reviewNote.trim().length < 5} onClick={() => void handleReviewChangeRequest("diterima")} className="min-h-11 rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white disabled:bg-emerald-300">Terima</button><button type="button" disabled={reviewSaving || reviewNote.trim().length < 5} onClick={() => void handleReviewChangeRequest("ditolak")} className="min-h-11 rounded-xl bg-red-700 px-4 text-sm font-bold text-white disabled:bg-red-300">Tolak</button><button type="button" onClick={() => { setReviewingRequestId(""); setReviewNote(""); }} className="min-h-11 rounded-xl border border-slate-300 px-4 text-sm font-bold text-slate-700">Batal</button></div></div> : <button type="button" onClick={() => setReviewingRequestId(request.id)} className="mt-4 min-h-11 rounded-xl border border-emerald-200 bg-white px-4 text-sm font-bold text-emerald-700">Tinjau permintaan</button>)}</li>)}</ol>}
+
+          {currentUser?.id === report.reporterId && !reportClosed && !changeRequests.some((request) => request.status === "diajukan") && (
+            <form onSubmit={handleSubmitChangeRequest} className="mt-5 space-y-4 border-t border-slate-200 pt-5">
+              <label className="block text-sm font-semibold text-slate-700">Jenis permintaan<select value={changeRequestType} onChange={(event) => setChangeRequestType(event.target.value as ReportChangeRequest["requestType"])} className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"><option value="koreksi">Ajukan koreksi</option><option value="penarikan">Ajukan penarikan</option></select></label>
+              <label className="block text-sm font-semibold text-slate-700">Penjelasan<textarea value={changeRequestDetail} onChange={(event) => setChangeRequestDetail(event.target.value)} rows={4} maxLength={1000} required placeholder={changeRequestType === "koreksi" ? "Tuliskan informasi yang perlu dikoreksi dan nilai yang benar." : "Jelaskan alasan laporan perlu ditarik."} className="mt-2 w-full resize-y rounded-xl border border-slate-300 p-3 text-sm" /></label>
+              <button type="submit" disabled={changeRequestSaving || changeRequestDetail.trim().length < 10} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-bold text-white disabled:bg-slate-400 sm:w-auto">{changeRequestSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{changeRequestSaving ? "Mengirim..." : "Kirim Permintaan"}</button>
+            </form>
+          )}
         </section>
 
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
@@ -784,7 +906,7 @@ export default function ReportDetailPage() {
             </ol>
           )}
 
-          {canUpdate ? (
+          {canUpdateIndividual ? (
             <form
               onSubmit={handleSaveFollowUp}
               className="mt-6 space-y-4 border-t border-slate-200 pt-5"
@@ -870,6 +992,10 @@ export default function ReportDetailPage() {
                 )}
               </button>
             </form>
+          ) : linkedCase ? (
+            <p className="mt-5 border-t border-emerald-200 pt-4 text-sm font-semibold text-emerald-700">
+              Status laporan ini dikelola melalui Kasus Induk {linkedCase.caseNumber}.
+            </p>
           ) : (
             <p className="mt-5 border-t border-slate-200 pt-4 text-sm text-slate-500">
               Hanya teknisi atau admin yang dapat memperbarui status dan

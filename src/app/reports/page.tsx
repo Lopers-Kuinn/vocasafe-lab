@@ -2,19 +2,23 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, Award, CalendarClock, ChevronRight, Clock3, FileWarning, Layers3, Loader2, MapPin, Plus, Search, ShieldAlert, SlidersHorizontal, Tag, UserCheck, Users } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { AlertCircle, Award, CalendarClock, CheckSquare2, ChevronRight, Clock3, FileWarning, FolderKanban, Layers3, Loader2, MapPin, Plus, Search, ShieldAlert, SlidersHorizontal, Tag, UserCheck, Users, X } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import MobileFilterSheet from "@/components/mobile/MobileFilterSheet";
 import { fetchLaboratories, type LaboratorySummary } from "@/lib/assets";
 import { getCurrentUserProfile, getRoleLabel } from "@/lib/auth";
-import { canEditReportStatus } from "@/lib/role-access";
+import { canCreateReportCase, canEditReportStatus } from "@/lib/role-access";
 import {
+  createReportCase,
+  fetchReportCases,
   fetchReports,
   fetchReportContributors,
   getReportContributionReward,
   HAZARD_CATEGORY_LABELS,
   REPORT_TYPE_LABELS,
   type DatabaseReport,
+  type ReportCaseSummary,
   type ReportContributor,
 } from "@/lib/reports";
 import type { HazardCategory, ReportStatus, ReportType, RiskLevel } from "@/types";
@@ -41,6 +45,14 @@ const statusColors: Record<ReportStatus, string> = {
   dalam_penanganan: "bg-yellow-100 text-yellow-700",
   selesai: "bg-green-100 text-green-700",
   ditolak: "bg-red-100 text-red-700",
+};
+
+const caseStatusLabels: Record<ReportCaseSummary["status"], string> = {
+  terverifikasi: "Terverifikasi",
+  dalam_penanganan: "Dalam Penanganan",
+  menunggu_konfirmasi: "Menunggu Konfirmasi",
+  selesai: "Selesai",
+  dibuka_kembali: "Dikembalikan",
 };
 
 function capitalize(value: string): string {
@@ -106,6 +118,7 @@ function groupReportsByAsset(reports: DatabaseReport[]): ReportGroup[] {
 }
 
 export default function ReportsPage() {
+  const router = useRouter();
   const [reports, setReports] = useState<DatabaseReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -127,16 +140,29 @@ export default function ReportsPage() {
   const [currentTimestamp, setCurrentTimestamp] = useState(0);
   const [contributors, setContributors] = useState<ReportContributor[]>([]);
   const [timelineWarning, setTimelineWarning] = useState("");
+  const [reportCases, setReportCases] = useState<ReportCaseSummary[]>([]);
+  const [caseWarning, setCaseWarning] = useState("");
+  const [canCreateCases, setCanCreateCases] = useState(false);
+  const [selectedReportIds, setSelectedReportIds] = useState<string[]>([]);
+  const [selectedGroupKey, setSelectedGroupKey] = useState("");
+  const [showCaseForm, setShowCaseForm] = useState(false);
+  const [caseTitle, setCaseTitle] = useState("");
+  const [caseReason, setCaseReason] = useState("");
+  const [caseError, setCaseError] = useState("");
+  const [caseSaving, setCaseSaving] = useState(false);
 
   useEffect(() => {
     let active = true;
 
-    void Promise.all([fetchReports(), fetchLaboratories(), getCurrentUserProfile()]).then(async ([result, laboratoryResult, profileResult]) => {
+    void Promise.all([fetchReports(), fetchLaboratories(), getCurrentUserProfile(), fetchReportCases()]).then(async ([result, laboratoryResult, profileResult, caseResult]) => {
       if (!active) return;
       setReports(result.reports);
       setLaboratories(laboratoryResult.laboratories);
       setCurrentUserId(profileResult.user?.id ?? "");
       setCanManageResponses(Boolean(profileResult.user && canEditReportStatus(profileResult.user.role)));
+      setCanCreateCases(Boolean(profileResult.user && canCreateReportCase(profileResult.user.role)));
+      setReportCases(caseResult.cases);
+      setCaseWarning(caseResult.error ?? "");
       setCurrentTimestamp(Date.now());
       setError(
         result.error || laboratoryResult.error
@@ -169,6 +195,14 @@ export default function ReportsPage() {
     () => new Map(contributors.map((contributor) => [contributor.reportId, contributor])),
     [contributors],
   );
+
+  const caseByReportId = useMemo(() => {
+    const result = new Map<string, ReportCaseSummary>();
+    for (const reportCase of reportCases) {
+      for (const reportId of reportCase.memberReportIds) result.set(reportId, reportCase);
+    }
+    return result;
+  }, [reportCases]);
 
   const filteredReports = useMemo(
     () =>
@@ -219,6 +253,46 @@ export default function ReportsPage() {
     setDraftTypeFilter(typeFilter); setDraftCategoryFilter(categoryFilter);
     setDraftAssignmentFilter(assignmentFilter);
     setShowMobileFilters(true);
+  }
+
+  function toggleReportSelection(report: DatabaseReport, group: ReportGroup) {
+    if (!report.assetId || caseByReportId.has(report.id) || isReportClosed(report)) return;
+    if (selectedGroupKey && selectedGroupKey !== group.key) {
+      setSelectedReportIds([report.id]);
+      setSelectedGroupKey(group.key);
+      setCaseTitle(report.title);
+      setCaseError("Pilihan dipindahkan karena satu kasus hanya boleh berisi laporan dari aset yang sama.");
+      return;
+    }
+    const next = selectedReportIds.includes(report.id)
+      ? selectedReportIds.filter((id) => id !== report.id)
+      : [...selectedReportIds, report.id];
+    setSelectedReportIds(next);
+    setSelectedGroupKey(next.length === 0 ? "" : group.key);
+    if (next.length === 0) {
+      setCaseTitle("");
+      setCaseReason("");
+    } else if (selectedReportIds.length === 0) {
+      setCaseTitle(report.title);
+    }
+    setCaseError("");
+  }
+
+  async function handleCreateCase(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setCaseError("");
+    setCaseSaving(true);
+    const result = await createReportCase({
+      reportIds: selectedReportIds,
+      title: caseTitle,
+      reason: caseReason,
+    });
+    setCaseSaving(false);
+    if (result.error || !result.caseId) {
+      setCaseError(result.error ?? "Kasus Induk belum berhasil dibuat.");
+      return;
+    }
+    router.push(`/reports/cases/${result.caseId}`);
   }
 
   useViewStateMemory(
@@ -339,6 +413,42 @@ export default function ReportsPage() {
           {canManageResponses && assignmentFilter !== "semua" && <button type="button" onClick={() => setAssignmentFilter("semua")} className="shrink-0 rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-800">{assignmentFilter === "saya" ? "Tugas saya" : assignmentFilter === "belum_ditetapkan" ? "Belum ada PIC" : "Terlambat"} ×</button>}
         </div>}
 
+        {reportCases.length > 0 && (
+          <section className="rounded-[24px] border border-emerald-200 bg-emerald-950 p-4 text-white shadow-sm sm:p-5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-emerald-300">Kasus Induk</p>
+                <h2 className="mt-1 text-xl font-bold">Penanganan laporan yang sudah diverifikasi serupa</h2>
+              </div>
+              <p className="text-xs text-emerald-100">{reportCases.length} kasus dalam cakupan akses Anda</p>
+            </div>
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              {reportCases.map((reportCase) => (
+                <Link key={reportCase.id} href={`/reports/cases/${reportCase.id}`} className="rounded-2xl border border-white/10 bg-white/10 p-4 transition hover:bg-white/15">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-emerald-200">{reportCase.caseNumber}</p>
+                      <h3 className="mt-1 break-words font-bold">{reportCase.title}</h3>
+                      <p className="mt-1 text-xs text-emerald-100">{reportCase.assetName} ({reportCase.assetCode})</p>
+                    </div>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-emerald-200" />
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
+                    <span className="rounded-full bg-white/10 px-2.5 py-1">{reportCase.memberCount} laporan</span>
+                    <span className="rounded-full bg-white/10 px-2.5 py-1">{reportCase.reporterCount} pelapor</span>
+                    <span className="rounded-full bg-white/10 px-2.5 py-1">{caseStatusLabels[reportCase.status]}</span>
+                    <span className="rounded-full bg-red-500/20 px-2.5 py-1 text-red-100">Risiko {reportCase.highestRiskScore}</span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {caseWarning && (
+          <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">{caseWarning}</p>
+        )}
+
         {loading ? (
           <div className="flex min-h-48 items-center justify-center rounded-lg border border-slate-200 bg-white">
             <Loader2 className="mr-2 h-5 w-5 animate-spin text-emerald-600" />
@@ -414,11 +524,21 @@ export default function ReportsPage() {
                     <ol className="space-y-3" aria-label={`Timeline laporan ${group.assetName}`}>
                       {group.reports.map((report) => {
                         const contributor = contributorByReportId.get(report.id);
-                        const reward = getReportContributionReward(report.status);
+                        const linkedCase = caseByReportId.get(report.id);
+                        const reward = getReportContributionReward(
+                          report.status,
+                          contributor?.role ?? null,
+                        );
                         return (
                           <li key={report.id} className="relative border-l-2 border-emerald-100 pl-4">
                             <span className="absolute -left-[5px] top-4 h-2 w-2 rounded-full bg-emerald-600" aria-hidden="true" />
-                            <Link href={`/reports/${report.id}`} className="group block rounded-xl border border-slate-100 bg-slate-50 p-3 transition hover:border-emerald-200 hover:bg-emerald-50/60">
+                            <div className="flex items-start gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3 transition hover:border-emerald-200 hover:bg-emerald-50/60">
+                              {canCreateCases && report.assetId && !linkedCase && !isReportClosed(report) && (
+                                <label className="mt-0.5 grid min-h-10 min-w-10 cursor-pointer place-items-center rounded-xl border border-slate-200 bg-white" title="Pilih laporan untuk Kasus Induk">
+                                  <input type="checkbox" className="h-4 w-4 accent-emerald-700" checked={selectedReportIds.includes(report.id)} onChange={() => toggleReportSelection(report, group)} aria-label={`Pilih laporan ${report.title}`} />
+                                </label>
+                              )}
+                              <Link href={`/reports/${report.id}`} className="group min-w-0 flex-1">
                               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                                 <div className="min-w-0">
                                   <p className="break-words text-sm font-bold text-slate-900">{report.title}</p>
@@ -433,13 +553,17 @@ export default function ReportsPage() {
                               <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold">
                                 <span className={`rounded-full px-2.5 py-1 ${statusColors[report.status]}`}>{statusLabels[report.status]}</span>
                                 <span className={`rounded-full px-2.5 py-1 ${riskColors[report.riskCategory]}`}>{capitalize(report.riskCategory)} · {report.riskScore}</span>
-                                <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 ${reward.points > 0 ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-600"}`}>
-                                  <Award className="h-3.5 w-3.5" /> {reward.points > 0 ? `+${reward.points} poin` : reward.label}
-                                </span>
+                                {contributor?.role === "mahasiswa" && (
+                                  <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 ${reward.points > 0 ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-600"}`}>
+                                    <Award className="h-3.5 w-3.5" /> {reward.points > 0 ? `+${reward.points} poin` : reward.label}
+                                  </span>
+                                )}
                                 {report.assignee && <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-slate-600"><UserCheck className="h-3.5 w-3.5" /> {report.assignee.fullName}</span>}
                                 {report.responseDueAt && <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 ${!isReportClosed(report) && new Date(report.responseDueAt).getTime() < currentTimestamp ? "bg-red-100 text-red-800" : "bg-amber-50 text-amber-800"}`}><CalendarClock className="h-3.5 w-3.5" /> {new Date(report.responseDueAt).toLocaleString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>}
+                                {linkedCase && <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-800"><FolderKanban className="h-3.5 w-3.5" /> {linkedCase.caseNumber}</span>}
                               </div>
-                            </Link>
+                              </Link>
+                            </div>
                           </li>
                         );
                       })}
@@ -451,6 +575,27 @@ export default function ReportsPage() {
           </div>
         )}
       </div>
+      {canCreateCases && selectedReportIds.length > 0 && (
+        <div className="fixed inset-x-3 bottom-20 z-40 mx-auto flex max-w-xl items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-white p-3 shadow-2xl sm:bottom-6">
+          <div className="min-w-0"><p className="text-sm font-bold text-slate-900">{selectedReportIds.length} laporan dipilih</p><p className="truncate text-xs text-slate-500">Pilih minimal dua laporan dengan masalah yang sama.</p></div>
+          <div className="flex shrink-0 gap-2">
+            <button type="button" onClick={() => { setSelectedReportIds([]); setSelectedGroupKey(""); setCaseTitle(""); setCaseReason(""); setCaseError(""); }} className="grid h-11 w-11 place-items-center rounded-xl border border-slate-200 text-slate-500" aria-label="Batalkan pilihan"><X className="h-4 w-4" /></button>
+            <button type="button" disabled={selectedReportIds.length < 2} onClick={() => setShowCaseForm(true)} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white disabled:bg-emerald-300"><CheckSquare2 className="h-4 w-4" /> Buat Kasus</button>
+          </div>
+        </div>
+      )}
+      {showCaseForm && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/50 p-3 sm:items-center" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowCaseForm(false); }}>
+          <form onSubmit={handleCreateCase} className="w-full max-w-lg rounded-[24px] bg-white p-5 shadow-2xl sm:p-6" role="dialog" aria-modal="true" aria-labelledby="case-form-title">
+            <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-[0.14em] text-emerald-700">Grouping terverifikasi</p><h2 id="case-form-title" className="mt-1 text-xl font-bold text-slate-950">Buat Kasus Induk</h2></div><button type="button" onClick={() => setShowCaseForm(false)} className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100 text-slate-600" aria-label="Tutup"><X className="h-4 w-4" /></button></div>
+            <p className="mt-3 text-sm leading-6 text-slate-600">Laporan asli tetap tersimpan. Pastikan seluruh pilihan membahas masalah yang sama, bukan hanya aset yang sama.</p>
+            <label className="mt-4 block text-sm font-semibold text-slate-700">Judul kasus<input value={caseTitle} onChange={(event) => setCaseTitle(event.target.value)} maxLength={160} required className="mt-2 min-h-11 w-full rounded-xl border border-slate-300 px-3 text-sm outline-none focus:border-emerald-500" /></label>
+            <label className="mt-4 block text-sm font-semibold text-slate-700">Alasan pengelompokan<textarea value={caseReason} onChange={(event) => setCaseReason(event.target.value)} rows={4} maxLength={1000} required placeholder="Jelaskan komponen, kondisi, dan bukti yang menunjukkan laporan-laporan ini merujuk masalah yang sama." className="mt-2 w-full resize-y rounded-xl border border-slate-300 p-3 text-sm outline-none focus:border-emerald-500" /></label>
+            {caseError && <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{caseError}</p>}
+            <button type="submit" disabled={caseSaving || selectedReportIds.length < 2 || caseTitle.trim().length < 5 || caseReason.trim().length < 10} className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white disabled:bg-emerald-300">{caseSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <FolderKanban className="h-4 w-4" />}{caseSaving ? "Membuat kasus..." : `Gabungkan ${selectedReportIds.length} laporan`}</button>
+          </form>
+        </div>
+      )}
       <MobileFilterSheet open={showMobileFilters} title="Filter laporan" resultCount={pendingMobileResultCount} onClose={() => setShowMobileFilters(false)} onReset={() => { setDraftRiskFilter("semua"); setDraftLaboratoryFilter("semua"); setDraftTypeFilter("semua"); setDraftCategoryFilter("semua"); setDraftAssignmentFilter("semua"); }} onApply={() => { setRiskFilter(draftRiskFilter); setLaboratoryFilter(draftLaboratoryFilter); setTypeFilter(draftTypeFilter); setCategoryFilter(draftCategoryFilter); setAssignmentFilter(draftAssignmentFilter); setShowMobileFilters(false); }}>
         <label className="text-sm font-semibold text-slate-700">Tingkat bahaya<select value={draftRiskFilter} onChange={(event) => setDraftRiskFilter(event.target.value as "semua" | RiskLevel)} className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"><option value="semua">Semua tingkat risiko</option><option value="kritis">Kritis</option><option value="tinggi">Tinggi</option><option value="sedang">Sedang</option><option value="rendah">Rendah</option></select></label>
         <label className="text-sm font-semibold text-slate-700">Jenis laporan<select value={draftTypeFilter} onChange={(event) => setDraftTypeFilter(event.target.value as "semua" | ReportType)} className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"><option value="semua">Semua jenis laporan</option>{Object.entries(REPORT_TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
