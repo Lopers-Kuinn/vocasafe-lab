@@ -50,6 +50,8 @@ const findingFilters: Array<{ value: FindingFilter; label: string; className: st
   { value: "kritis", label: "Kritis", className: "border-red-200 text-red-700" },
 ];
 
+const CHECKLIST_BATCH_SIZE = 10;
+
 function matchesTimeFilter(value: string, filter: TimeFilter): boolean {
   if (filter === "semua") return true;
   const date = new Date(value);
@@ -90,6 +92,7 @@ export default function ChecklistsPage() {
   const [draftAssetFilter, setDraftAssetFilter] = useState("semua");
   const [draftTemplateFilter, setDraftTemplateFilter] = useState("semua");
   const [draftLaboratoryFilter, setDraftLaboratoryFilter] = useState("semua");
+  const [visibleResultCount, setVisibleResultCount] = useState(CHECKLIST_BATCH_SIZE);
 
   useEffect(() => {
     let active = true;
@@ -249,7 +252,7 @@ export default function ChecklistsPage() {
             </label>
           </div>
 
-          <div className="-mx-1 mt-4 flex gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap" aria-label="Filter status temuan">
+          <div className="mt-4 grid grid-cols-2 gap-2 min-[380px]:grid-cols-3 sm:flex sm:flex-wrap" aria-label="Filter status temuan">
             {findingFilters.map((filter) => {
               const active = findingFilter === filter.value;
               return (
@@ -375,9 +378,9 @@ export default function ChecklistsPage() {
               ) : (
           <div className="space-y-3">
             <p className="text-sm text-slate-500">
-              Menampilkan {filteredResults.length} dari {results.length} hasil inspeksi.
+              Menampilkan {Math.min(visibleResultCount, filteredResults.length)} dari {filteredResults.length} hasil sesuai filter.
             </p>
-            {filteredResults.map((result) => (
+            {filteredResults.slice(0, visibleResultCount).map((result) => (
               <article
                 key={result.id}
                 className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
@@ -431,6 +434,11 @@ export default function ChecklistsPage() {
                 </Link>
               </article>
             ))}
+            {visibleResultCount < filteredResults.length && (
+              <button type="button" onClick={() => setVisibleResultCount((count) => count + CHECKLIST_BATCH_SIZE)} className="min-h-12 w-full rounded-2xl border border-emerald-200 bg-white px-4 text-sm font-bold text-emerald-800 shadow-sm hover:bg-emerald-50">
+                Tampilkan {Math.min(CHECKLIST_BATCH_SIZE, filteredResults.length - visibleResultCount)} hasil berikutnya
+              </button>
+            )}
           </div>
               )}
             </section>

@@ -58,6 +58,8 @@ const operationalColors: Record<AssetOperationalState, string> = {
   dipensiunkan: "bg-slate-200 text-slate-700",
 };
 
+const ASSET_BATCH_SIZE = 12;
+
 export default function AssetsPage() {
   const [assets, setAssets] = useState<DatabaseAsset[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,6 +89,7 @@ export default function AssetsPage() {
   const [draftKindFilter, setDraftKindFilter] = useState<"semua" | DatabaseAssetKind>("semua");
   const [draftStatusFilter, setDraftStatusFilter] = useState<"semua" | DatabaseAssetStatus>("semua");
   const [draftOperationalFilter, setDraftOperationalFilter] = useState<"semua" | AssetOperationalState>("semua");
+  const [visibleAssetCount, setVisibleAssetCount] = useState(ASSET_BATCH_SIZE);
 
   function retryLoadAssets() {
     setLoading(true);
@@ -355,10 +358,10 @@ export default function AssetsPage() {
         ) : (
           <>
             <p className="text-sm text-slate-500">
-              Menampilkan {filteredAssets.length} dari {assets.length} aset.
+              Menampilkan {Math.min(visibleAssetCount, filteredAssets.length)} dari {filteredAssets.length} aset sesuai filter.
             </p>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {filteredAssets.map((asset) => (
+              {filteredAssets.slice(0, visibleAssetCount).map((asset) => (
                 <Link
                   key={asset.id}
                   href={`/assets/${encodeURIComponent(asset.code)}`}
@@ -397,6 +400,11 @@ export default function AssetsPage() {
                 </Link>
               ))}
             </div>
+            {visibleAssetCount < filteredAssets.length && (
+              <button type="button" onClick={() => setVisibleAssetCount((count) => count + ASSET_BATCH_SIZE)} className="min-h-12 w-full rounded-2xl border border-emerald-200 bg-white px-4 text-sm font-bold text-emerald-800 shadow-sm hover:bg-emerald-50">
+                Tampilkan {Math.min(ASSET_BATCH_SIZE, filteredAssets.length - visibleAssetCount)} aset berikutnya
+              </button>
+            )}
           </>
         )}
       </div>

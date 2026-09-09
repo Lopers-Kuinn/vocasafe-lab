@@ -60,6 +60,8 @@ const statusLabels: Record<ReportStatus, string> = {
   ditolak: "Ditolak",
 };
 
+const AUDIT_FINDING_BATCH_SIZE = 8;
+
 const findingStyles: Record<AuditFindingClassification, string> = {
   observation: "border-sky-200 bg-sky-50 text-sky-700",
   minor: "border-amber-200 bg-amber-50 text-amber-700",
@@ -285,6 +287,7 @@ export default function AuditPage() {
   const [scope, setScope] = useState("Evaluasi kinerja K3, kepatuhan aset, laporan bahaya, inspeksi, dan efektivitas tindak lanjut.");
   const [criteria, setCriteria] = useState("Panduan SMK3L Perguruan Tinggi 2024, PP 50 Tahun 2012, ISO 45004:2024");
   const [methodology, setMethodology] = useState("Telaah data digital, analisis tren, pemeriksaan temuan prioritas, dan verifikasi tindak lanjut.");
+  const [visibleFindingCount, setVisibleFindingCount] = useState(AUDIT_FINDING_BATCH_SIZE);
 
   const loadData = async () => {
     setLoading(true);
@@ -530,7 +533,7 @@ export default function AuditPage() {
             <div className="mt-5 flex items-center gap-3 rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-800"><CheckCircle2 className="h-5 w-5 shrink-0" />Tidak ada temuan aktif atau tindakan terbuka pada cakupan ini.</div>
           ) : (
             <div className="mt-5 grid min-w-0 gap-3 xl:grid-cols-2">
-              {view.priorityFindings.slice(0, 12).map((finding) => (
+              {view.priorityFindings.slice(0, visibleFindingCount).map((finding) => (
                 <article key={finding.id} className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
                   <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
                     <div className="min-w-0"><span className={`inline-flex rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${findingStyles[finding.classification]}`}>{findingLabels[finding.classification]}</span><h3 className="mt-2 break-words font-bold text-slate-950">{finding.title}</h3></div>
@@ -544,6 +547,11 @@ export default function AuditPage() {
                   {finding.href && <Link href={finding.href} className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-emerald-700 print:hidden">Buka sumber <ChevronRight className="h-3.5 w-3.5" /></Link>}
                 </article>
               ))}
+              {visibleFindingCount < view.priorityFindings.length && (
+                <button type="button" onClick={() => setVisibleFindingCount((count) => count + AUDIT_FINDING_BATCH_SIZE)} className="min-h-12 w-full rounded-2xl border border-emerald-200 bg-white px-4 text-sm font-bold text-emerald-800 hover:bg-emerald-50 xl:col-span-2 print:hidden">
+                  Tampilkan {Math.min(AUDIT_FINDING_BATCH_SIZE, view.priorityFindings.length - visibleFindingCount)} temuan berikutnya
+                </button>
+              )}
             </div>
           )}
         </section>

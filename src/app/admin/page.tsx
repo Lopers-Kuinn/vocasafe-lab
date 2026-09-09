@@ -229,6 +229,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [visibleProfileCount, setVisibleProfileCount] = useState(8);
 
   async function refreshAdminData() {
     const result = await fetchAdminData();
@@ -333,7 +334,7 @@ export default function AdminPage() {
               ) : (
                 <>
                   <div className="grid gap-3 md:hidden">
-                    {data.profiles.map((profile) => (
+                    {data.profiles.slice(0, visibleProfileCount).map((profile) => (
                       <ProfileCard
                         key={profile.id}
                         profile={profile}
@@ -341,6 +342,11 @@ export default function AdminPage() {
                         onUpdated={refreshAdminData}
                       />
                     ))}
+                    {visibleProfileCount < data.profiles.length && (
+                      <button type="button" onClick={() => setVisibleProfileCount((count) => count + 8)} className="min-h-12 w-full rounded-2xl border border-emerald-200 bg-white px-4 text-sm font-bold text-emerald-800 shadow-sm hover:bg-emerald-50">
+                        Tampilkan {Math.min(8, data.profiles.length - visibleProfileCount)} profil berikutnya
+                      </button>
+                    )}
                   </div>
                   <div className="hidden overflow-x-auto rounded-lg border border-slate-200 bg-white md:block">
                     <table className="w-full text-left text-sm">
