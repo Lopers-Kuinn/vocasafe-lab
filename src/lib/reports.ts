@@ -279,11 +279,26 @@ export interface ReportCaseSummary {
 
 export interface ReportCaseEvent {
   id: string;
-  eventType: "dibuat" | "mulai_ditangani" | "diajukan_konfirmasi" | "dikonfirmasi" | "dikembalikan";
+  eventType: "dibuat" | "mulai_ditangani" | "tindak_lanjut" | "diajukan_konfirmasi" | "dikonfirmasi" | "dikembalikan";
   note: string;
   actorName: string;
   actorRole: UserRole | null;
   createdAt: string;
+}
+
+export interface ReportCaseAttachment {
+  id: string;
+  caseId: string;
+  eventId: string;
+  evidenceStage: "sebelum" | "proses" | "sesudah";
+  bucket: string;
+  path: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  uploadedBy: string;
+  createdAt: string;
+  signedUrl: string | null;
 }
 
 export interface ReportChangeRequest {
@@ -752,6 +767,130 @@ export async function transitionReportCase(input: {
       : { saved: true, error: null };
   } catch {
     return { saved: false, error: "Status kasus belum berhasil diperbarui." };
+  }
+}
+
+export async function addReportCaseFollowUp(input: {
+  caseId: string;
+  note: string;
+}): Promise<{ eventId: string | null; error: string | null }> {
+  if (!UUID_PATTERN.test(input.caseId) || input.note.trim().length < 5) {
+    return { eventId: null, error: "Kasus atau catatan tindak lanjut tidak valid." };
+  }
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase.rpc("add_report_case_followup", {
+      target_case_id: input.caseId,
+      followup_note: input.note.trim(),
+    });
+    if (error || typeof data !== "string") {
+      const unavailable = error?.code === "PGRST202" ||
+        /add_report_case_followup.*not found|could not find the function/i.test(error?.message ?? "");
+      return {
+        eventId: null,
+        error: unavailable
+          ? "Fitur tindak lanjut kasus belum tersedia. Hubungi admin."
+          : "Tindak lanjut tidak dapat disimpan. Periksa akses dan status kasus.",
+      };
+    }
+    return { eventId: data, error: null };
+  } catch {
+    return { eventId: null, error: "Tindak lanjut belum berhasil disimpan." };
+  }
+}
+
+export async function fetchReportCaseAttachments(
+  caseId: string,
+): Promise<{ attachments: ReportCaseAttachment[]; error: string | null }> {
+  if (!UUID_PATTERN.test(caseId)) return { attachments: [], error: "ID kasus tidak valid." };
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data, error } = await supabase
+      .from("report_case_attachments")
+      .select("id,case_id,event_id,evidence_stage,bucket,path,file_name,mime_type,size_bytes,uploaded_by,created_at")
+      .eq("case_id", caseId)
+      .order("created_at", { ascending: false });
+    if (error) {
+      const unavailable = error.code === "PGRST205" || /report_case_attachments.*not found|schema cache/i.test(error.message);
+      return {
+        attachments: [],
+        error: unavailable ? "Bukti tindak lanjut kasus belum tersedia. Hubungi admin." : "Bukti tindak lanjut tidak dapat dimuat.",
+      };
+    }
+
+    const attachments = await Promise.all(((data ?? []) as Array<Record<string, unknown>>).map(async (row) => {
+      const { data: signedData } = await supabase.storage
+        .from(String(row.bucket))
+        .createSignedUrl(String(row.path), 60 * 60);
+      return {
+        id: String(row.id),
+        caseId: String(row.case_id),
+        eventId: String(row.event_id),
+        evidenceStage: row.evidence_stage as ReportCaseAttachment["evidenceStage"],
+        bucket: String(row.bucket),
+        path: String(row.path),
+        fileName: String(row.file_name),
+        mimeType: String(row.mime_type),
+        sizeBytes: Number(row.size_bytes),
+        uploadedBy: String(row.uploaded_by),
+        createdAt: String(row.created_at),
+        signedUrl: signedData?.signedUrl ?? null,
+      };
+    }));
+    return { attachments, error: null };
+  } catch {
+    return { attachments: [], error: "Bukti tindak lanjut tidak dapat dimuat." };
+  }
+}
+
+export async function uploadReportCaseEvidence(input: {
+  caseId: string;
+  eventId: string;
+  stage: ReportCaseAttachment["evidenceStage"];
+  bucket: string;
+  file: File;
+}): Promise<{ error: string | null }> {
+  if (!UUID_PATTERN.test(input.caseId) || !UUID_PATTERN.test(input.eventId)) {
+    return { error: "Kasus atau tindak lanjut tidak valid." };
+  }
+  const validationError = validateEvidenceFile(input.file);
+  if (validationError) return { error: validationError };
+
+  try {
+    const supabase = createSupabaseBrowserClient();
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    if (authError || !authData.user) return { error: "Sesi pengguna tidak valid." };
+
+    const evidenceId = crypto.randomUUID();
+    const path = `cases/${input.caseId}/${evidenceId}-${safeFileName(input.file.name)}`;
+    const { error: uploadError } = await supabase.storage
+      .from(input.bucket)
+      .upload(path, input.file, {
+        cacheControl: "3600",
+        contentType: input.file.type,
+        upsert: false,
+      });
+    if (uploadError) return { error: "Foto tindak lanjut gagal diunggah." };
+
+    const { error: metadataError } = await supabase
+      .from("report_case_attachments")
+      .insert({
+        id: evidenceId,
+        case_id: input.caseId,
+        event_id: input.eventId,
+        evidence_stage: input.stage,
+        bucket: input.bucket,
+        path,
+        file_name: input.file.name,
+        mime_type: input.file.type,
+        size_bytes: input.file.size,
+        uploaded_by: authData.user.id,
+      });
+    return metadataError
+      ? { error: "Foto terunggah, tetapi metadata bukti belum berhasil disimpan." }
+      : { error: null };
+  } catch {
+    return { error: "Foto tindak lanjut gagal diproses." };
   }
 }
 
