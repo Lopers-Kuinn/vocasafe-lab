@@ -385,7 +385,7 @@ label:has(input:focus-visible) {
     overflow-wrap: anywhere;
   }
 
-  .page-enter :where(input, select, textarea) {
+  .page-enter :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
     width: 100%;
     min-width: 0;
   }

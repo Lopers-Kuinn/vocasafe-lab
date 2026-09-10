@@ -50,7 +50,7 @@ export function canEditReportStatus(role: UserRole): boolean {
 }
 
 export function canCreateReportCase(role: UserRole): boolean {
-  return role === "teknisi" || role === "admin";
+  return role === "teknisi" || role === "kepala_lab" || role === "admin";
 }
 
 export function canConfirmReportCase(role: UserRole): boolean {

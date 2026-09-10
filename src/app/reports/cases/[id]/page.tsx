@@ -7,7 +7,7 @@ import { AlertCircle, ArrowLeft, Camera, CheckCircle2, ChevronRight, Clock3, Fil
 import AppShell from "@/components/AppShell";
 import { getCurrentUserProfile, getRoleLabel } from "@/lib/auth";
 import { optimizeEvidenceImage } from "@/lib/image-evidence";
-import { canConfirmReportCase, canCreateReportCase } from "@/lib/role-access";
+import { canConfirmReportCase, canEditReportStatus } from "@/lib/role-access";
 import {
   addReportCaseFollowUp,
   fetchReportCaseAttachments,
@@ -128,7 +128,7 @@ export default function ReportCaseDetailPage() {
     () => new Map(contributors.map((contributor) => [contributor.reportId, contributor])),
     [contributors],
   );
-  const canOperate = Boolean(currentUser && canCreateReportCase(currentUser.role));
+  const canOperate = Boolean(currentUser && canEditReportStatus(currentUser.role));
   const canConfirm = Boolean(currentUser && canConfirmReportCase(currentUser.role));
   const requiresCompletionEvidence = (reportCase?.highestRiskScore ?? 0) >= 51;
   const hasCompletionEvidence = attachments.some((attachment) => attachment.evidenceStage === "sesudah");
